@@ -1,0 +1,466 @@
+/**
+ * widget to show an autosuggest grid with different sections
+ * 
+ * eg. layout with 3 sections: proposals, didyoumean, tree
+ * 
+ * 		 proposals (section 1) 	| tree (section 2)
+ * 		--------------------------------------------------
+ * 		 didyoumean (section 3) | 
+ * 
+ * @autor nbe
+ * 
+ */
+$.widget( "shi.advancedAutosuggest", {
+ 
+	// widget options which can be overwritten by calling element
+	options : {
+		//css class definitions
+		autosuggestContainer : ".ip-advanced-autosuggest",
+		leftPanel : ".ipaa-left",
+		rightPanel : ".ipaa-right",
+		colClass : ".ipaa-result-col",
+		rowClass : ".ipaa-result-row",
+		itemClass : ".ipaa-resultlist-item",
+		activeClass : ".ipaa-active-item",
+		loadingClass : "ipaa-loading",
+		
+		// widget options
+		delay: 200,																				// delay between key event and search execution
+		ajaxTimeout : 0,																		// time before ajax request is considered as failed	
+		ajaxUrl : null,																			// url to perform ajax request 
+		ajaxParams : null,																		// additional ajax request parameters
+		inputKey : "search",	
+		minLength : 2,																			// minimum number of chars required before the search is executed
+		defaultTemplate : "<li class=\"ipaa-resultlist-item\">%NAME%</li>",						// default template for a single item
+		maxItemLength : null,																	// cut the item to given length if longer than this value
+		autoEnterSelected : true,																// active element will be entered into input-field automatically
+		autoEnterHovered:true,																	// hovered element will be entered into input-field automatically
+		autoEnterClicked : true,																// clicked element will be entered into input-field automatically
+		autoEnterOnReturn : true,																// active element will be entered into input-field on return button press
+		triggerClickOnEnter : true,																// pressing the return button on an active link element triggers the click event 
+		loaderTarget : null,																	// definied html element where the loader-css-class should be added / removed	
+		hideOnEmpty : ".ipaa-results",															// autosuggest will be hidden if there is no list item in this element
+		appendModeList : null,																	// selected term will be appended to element value instead of default behaviour (replacement)	
+		
+		// additional information
+		manualClickTrigger : "IPAA_CLICK_TRIGGERED_MANUALLY",									// additional parameter passed to trigger click event to distinguish a manually fired click from the original one
+		
+		// events
+		create : null,																			// fired on widget creation 
+		update : null,																			// fired on data update 
+	},
+
+	// private variables 
+	_pending : 0,																				// counter for pending requests
+	
+	_lastAutoCompleteKey : 0,
+	
+	// constructor
+    _create: function() {
+		that = this;
+
+		// register events provided by caller
+		that._registerCallerEvents();
+		
+		// register required keyboard event listeners
+		that._registerKeyEvents();
+
+		// register required mouse event listeners		
+		that._registerMouseEvents();
+
+		// timeout variable to store pending ajax requests
+		that._timeout =  null;
+
+		// register widget specific event handlers 
+		that.element.on("advancedautosuggestcomplete", function() {
+			
+			that._trigger("update");
+			
+			var requiredCounter = $(that.options.hideOnEmpty).find("li").length;
+			
+			if(that.element.val().length >= that.options.minLength && requiredCounter > 0) {
+				that._showAutosuggestContainer();				
+			} else {
+				that._hideAutosuggestContainer();
+			}
+			
+			that._pending > 0 ? that._pending-- : null;
+			// remove loading class if there is no pending request
+			if (that._pending < 1) {
+				that._getLoadingClassTarget().removeClass(that.options.loadingClass);
+			}
+			
+		});
+    },
+    
+	// private method to register keyboard event handlers
+	_registerKeyMap: function(e) {
+		var keyCode = e.keyCode;
+		this._lastAutoCompleteKey = keyCode;
+		switch (keyCode) {
+		case 37:// left
+			// jump to left col for currently in right
+			if(this._getItemIndex(this.options.activeClass, this.options.rightPanel, "li") > -1) {
+				this._jumpTo(0,this.options.leftPanel);
+				e.preventDefault();
+                e.stopPropagation();
+			}
+			break;
+		case 38:// top
+				var parent = $(this.options.activeClass).closest(this.options.colClass);							// fetch current col
+				var currentIndex = this._getItemIndex(this.options.activeClass, this.options.colClass, "li") - 1;   // fetch current item index
+				var maxLength = parent.find(this.options.itemClass).length;											// get number of items in col
+				
+				if (currentIndex < 0) {
+					if(this._getItemIndex(this.options.activeClass, this.options.leftPanel, "li") > -1) {
+						$(this.options.itemClass).removeClass("ipaa-active-item");
+						this.element.focus();
+					} else if (this._getItemIndex(this.options.activeClass, this.options.rightPanel, "li") > -1) {
+						var switchIndex = $(this.options.leftPanel).find(this.options.itemClass).length - 1;
+						this._jumpTo(switchIndex, this.options.leftPanel);
+					}
+				} else {
+					if(this._getItemIndex(this.options.activeClass, this.options.leftPanel, "li") > -1) {
+						this._jumpTo(currentIndex, this.options.leftPanel);
+					} else {
+						this._jumpTo(currentIndex, this.options.rightPanel);
+					}
+				}
+			break;
+		case 39:// right
+			// jump to right col if currently in left
+			if(this._getItemIndex(this.options.activeClass, this.options.leftPanel, "li") > -1) {
+				this._jumpTo(0,this.options.rightPanel);
+			}
+			break;
+		case 40:// bottom
+				var parent = $(this.options.activeClass).closest(this.options.colClass);							// fetch current col
+				var currentIndex = this._getItemIndex(this.options.activeClass, this.options.colClass, "li") + 1;	// fetch current item index
+				var maxLength = parent.find(this.options.itemClass).length;											// get number of items in col
+				
+				// if 
+				if (currentIndex < maxLength) {
+					if(this._getItemIndex(this.options.activeClass, this.options.leftPanel, "li") > -1) {
+						this._jumpTo(currentIndex, this.options.leftPanel);
+					} else {
+						this._jumpTo(currentIndex,this.options.rightPanel);
+					}
+				} else {
+					if(this._getItemIndex(this.options.activeClass, this.options.leftPanel, "li") > -1) {
+						this._jumpTo(0,this.options.rightPanel);
+					} else if (this._getItemIndex(this.options.activeClass, this.options.rightPanel, "li") > -1) {
+						$(this.options.itemClass).removeClass("ipaa-active-item");
+						this.element.focus();
+					} else {
+						this._jumpTo(0,this.options.leftPanel);
+					}
+				}
+			break;
+		case 13: // return 
+			break;
+		case 27: // esc 
+			if ($(this.options.activeClass).length > 0) {
+				$(this.options.itemClass).removeClass("ipaa-active-item");
+			} else {
+				this._hideAutosuggestContainer(true);
+			}
+			break;
+		case 32: //space
+			if (this.options.autoEnterSelected === false 
+					&& ($(this.options.activeClass).length > 0)
+					&& ($(this.options.activeClass).find("a").length === 0)
+					&& ($(this.options.autosuggestContainer).is(":visible"))) {
+				
+				this._manageElementString();
+				$(this.options.itemClass).removeClass("ipaa-active-item");
+				break;
+			}
+		default: // other keys 
+			if(this.element.val().length >= this.options.minLength) {
+				
+				// try to fetch data
+				this._populate();	
+//				this._showAutosuggestContainer();
+			} else {
+				this._hideAutosuggestContainer();
+			}
+		}
+	},
+	
+	// private method to mark the next autosuggest item as active
+	_jumpTo : function(intIndex,strContainer) {
+		$(this.options.itemClass).removeClass("ipaa-active-item");
+		var currentListItem = $(strContainer + " " + this.options.itemClass + ":eq(" + intIndex + ")");
+			currentListItem.addClass('ipaa-active-item');
+			if (currentListItem.find("a").length === 0 && this.options.autoEnterSelected === true) {
+				this.element.val(currentListItem.text());
+			}
+	},
+	
+	_selectItem : function(objItem) {
+		$(this.options.itemClass).removeClass("ipaa-active-item");
+		objItem.addClass('ipaa-active-item');
+	},
+	
+	// private method to get the current index of an item depending on its parent
+	_getItemIndex : function(strSource, strParent, strTarget) {
+		var objSource = $(strSource);
+		var parentContainer = objSource.closest(strParent);
+		var currentIndex = parentContainer.find(strTarget).index(objSource);
+		return currentIndex;
+	},
+	
+	// handle mouse events when hovering over items
+	_registerMouseEvents : function() {
+		var that = this;
+		$(this.options.autosuggestContainer).on("mouseenter", this.options.itemClass, function() {
+			$(that.options.itemClass).removeClass("ipaa-active-item");
+			$(this).addClass('ipaa-active-item');
+			if ($(this).find("a").length < 1 && that.options.autoEnterHovered === true) {
+				that.element.val($(this).text());
+			}
+		});
+		
+		$(this.options.autosuggestContainer).on("mouseleave",this.options.itemClass, function() {
+			$(this).css('background-color', '');
+				$(this).finish();
+		});
+		
+		$(this.options.autosuggestContainer).on("click",this.options.activeClass, function(e) {
+			if($(this).find("a").length === 0 && that.options.autoEnterClicked === true) {
+				that._manageElementString();
+				that.element.focus();
+			}
+		});
+		
+		
+		// hide autosuggest when clicking another element on the current page
+		$(document).on("mouseup", function(e) {
+			var objContainer = $(that.options.autosuggestContainer);
+			var objElement = that.element;
+			
+			if (!objContainer.is(e.target) 
+					&& !objElement.is(e.target)
+					&& objContainer.has(e.target).length === 0) {
+					objContainer.hide();
+				} 
+			
+		});
+		
+		// hide autosuggest when clicking outside of the browser
+		$(this.options.autosuggestContainer).on("mousedown", function(e) {
+			e.preventDefault();
+		});
+		
+		$(this.element).on("blur",function(e) {
+			that._hideAutosuggestContainer();
+		});
+	},
+	
+	// private method to register keyboard events
+	_registerKeyEvents : function() {
+		var that = this;
+		that._on(that.element, {
+			"keyup" : that._registerKeyMap,
+			"keydown" : function(e) {
+				var keyCode = e.keyCode;
+				if (keyCode == 13 
+						&& $(that.options.activeClass).length > 0
+						&& $(that.options.activeClass).find("a").length == 0
+						&& that.options.autoEnterOnReturn == true
+						&& (that._lastAutoCompleteKey === 38 || that._lastAutoCompleteKey === 40)) {
+					that.element.val($(that.options.activeClass).text());
+				} else if (keyCode == 13
+						&& $(that.options.activeClass).length > 0
+						&& $(that.options.activeClass).find("a").length == 1
+						&& that.options.triggerClickOnEnter == true) {
+					e.preventDefault();
+					$(that.options.activeClass).find("a").trigger("click", [that.options.manualClickTrigger]);
+				} else if (keyCode == 38) {
+					e.preventDefault();
+				}
+			}
+		});
+	},
+	
+	// private method to trigger callbacks provided by caller
+	_registerCallerEvents : function() {
+		var that = this;
+		this._trigger("create", null, {
+			"autosuggestContainer" : this.options.autosuggestContainer,
+			"externalSelect" : function(objItem) {
+				that._selectItem(objItem);
+			},
+			"externalRefresh" : function(externalTerm, arrRefreshContainers) {
+				that._populate(externalTerm,arrRefreshContainers);
+			},
+			"externalTakeSuggestion": function() {
+				that._manageElementString();
+			}
+		});
+	},
+	
+	// private method to add autosuggest items to the panel
+	_populate : function(externalTerm,arrRefreshContainers) {
+				
+		if (this._timeout != null) {
+			clearTimeout(this._timeout);
+		}
+		
+		var searchTerm = this.element.val();
+		if (externalTerm !== undefined) {
+			searchTerm = externalTerm;
+		}
+		
+		this._pending++;
+		that._getLoadingClassTarget().addClass(this.options.loadingClass);
+		
+		this._timeout = setTimeout(function() {
+			that._timeout = null;
+			
+			var suggests = that._requestData(searchTerm);
+		
+			suggests.done(function(availableSuggests) {
+				
+				that._processJsonData(availableSuggests,arrRefreshContainers);
+				// trigger complete event when 
+				that._trigger("complete", { type : "complete" },{ data : availableSuggests });
+			});
+			
+			suggests.fail(function(){
+				that._pending = 0;
+				that._getLoadingClassTarget().removeClass(that.options.loadingClass);
+			});
+			
+		},this.delay);
+	},
+	
+	// private method to fetch autosuggest items by ajax
+	_requestData : function(searchTerm) {
+		
+		var deferred = $.Deferred();
+		var ajaxData = {};
+		if (this.options.ajaxParams === null) {
+			ajaxData[this.options.inputKey] = searchTerm;
+		} else {
+			ajaxData = this.options.ajaxParams;
+			ajaxData[this.options.inputKey] = searchTerm;
+		}
+		var targetUrl = this.options.ajaxUrl;
+		
+		// cancel pending requests if there are any
+		var existingRequest = this.element.data("jqXHR");
+		if( existingRequest ) {
+            existingRequest.abort();
+			this._pending > 0 ? this._pending-- : null;
+        }
+		
+		this.element.data("jqXHR",$.ajax({
+			url : targetUrl,
+			dataType : "json", 
+			data : ajaxData,
+			contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+			timeout : this.options.ajaxTimeout,
+		}).done(function(data, textStatus, jqXHR) {
+			deferred.resolve(data);
+		}).fail(function(jqXHR, textStatus, errorThrown){
+			deferred.reject();
+		}));
+		return deferred.promise();
+	}, 
+
+	_hideAutosuggestContainer : function(boolClearInput) {
+		if (boolClearInput === true) {
+			
+		}
+		$(this.options.autosuggestContainer).hide();
+	}, 
+	
+	_showAutosuggestContainer : function() {
+		$(this.options.autosuggestContainer).show();
+	}, 
+	
+	_manageElementString : function() {
+		var currentValue = this.element.val().trim();
+		var lastIndex = currentValue.lastIndexOf(" ");
+		var singleTerms = currentValue.split(/(\s+)/).filter(function(e) { 
+			return e.trim().length > 0; }
+		);
+		
+		if(this.options.appendModeList == null || this.options.appendModeList.indexOf($(this.options.activeClass).closest(this.options.rowClass).attr("id")) < 0) {
+			this.element.val($(this.options.activeClass).text());
+		}else if (currentValue.indexOf(" ") < 0 || singleTerms.length < 2) {
+			this.element.val($(this.options.activeClass).text());
+		} else {
+			this.element.val(currentValue.substring(0, lastIndex) + " " + $(this.options.activeClass).text());
+		}
+
+		this.element.focus();
+	},
+	
+	_getLoadingClassTarget : function() {
+		if (this.options.loaderTarget === null) {
+			return $(this.options.autosuggestContainer);
+		} else {
+			return $(this.options.loaderTarget);
+		}
+	},
+	
+	_render : function(strTmpl, objItem) {
+		
+		for (var key in objItem) {
+			strTmpl = strTmpl.replace(new RegExp("%" + key.toUpperCase() + "%","g"),objItem[key]);
+		}
+		
+		return strTmpl;
+	}, 
+	
+	// process json data using information from json array
+	_processJsonData : function(availableSuggests,arrRefreshContainers) {
+		
+		for (var key in availableSuggests) {
+		
+			if (arrRefreshContainers !== undefined && arrRefreshContainers.indexOf(key) < 0) {
+				continue;
+			}
+			
+			if (availableSuggests.hasOwnProperty(key) && $('#' + key).length != 0) {
+		
+				var suggestBlock = availableSuggests[key];
+				var tmpl = "";
+				
+				if (suggestBlock.hasOwnProperty("template")) {
+					tmpl = suggestBlock["template"];
+				} else {
+					tmpl = that.options.defaultTemplate;
+				}
+				
+				if (suggestBlock.hasOwnProperty("headline")) {
+					$('#' + key).find(".ipaa-result-headline").show().text(suggestBlock["headline"]);
+				} 
+				
+				// building string in loop for performance
+				var strHtml = "";
+				for(var singleValue in suggestBlock["items"]) {
+					strHtml += that._render(tmpl,suggestBlock["items"][singleValue]);
+				}
+				$('#' + key).find(".ipaa-resultlist").html(strHtml);
+			}
+		}
+		
+		$('.ipaa-result-row').each(function(index) {
+			if ((arrRefreshContainers === undefined) && (!availableSuggests.hasOwnProperty($(this).attr("id")))) {
+				$(this).find(".ipaa-resultlist").html("");
+			}
+		});
+		
+		$(".ipaa-resultlist").each(function(index) {
+			if ($(this).find("li").length > 0) {
+				$(this).parent().show();
+			} else {
+				$(this).parent().hide();
+			}
+		});
+
+	}
+});

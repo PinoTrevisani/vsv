@@ -1,0 +1,15 @@
+.scrollbar-panel {
+	position: relative;
+	height: 100%;
+	min-width: 1%;
+}
+		
+.scrollbar-position-pointer {
+	position: relative;
+}
+		
+.scrollbar-button {
+	width: 100%;
+	position: relative;
+	min-height: 1px;
+}

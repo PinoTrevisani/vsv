@@ -1,0 +1,105 @@
+$('#content')[0].addEventListener('wheel', handleScroll, {
+	passive : false
+});
+
+var scrollCount = 0;
+var lastWheel = 0;
+function handleScroll(e) {
+	var now = Date.now();
+  	var scrollDistance = 26;
+	if (now > lastWheel + 100) {
+		preventDefault(e);
+		var delta = e.deltaY;
+		var scrollTop = $('#content')[0].scrollTop;
+
+		var pxDelta = (delta > 0 ? scrollDistance : -scrollDistance);
+		var targetScrollTop;
+
+		var currentItem = getFirstLOSPartInView(72);
+		if (currentItem.length <= 0) {
+			if(pxDelta < 0) {
+				// if we have no currentItem and scrolling up then last one is current
+				var losParts = $(".loadonscroll");
+				currentItem = $(losParts[losParts.length - 1]);
+			} else {
+				// if we have no currentItem and scrolling down then do
+				// nothing (assuming we are at the end of the document)
+				return;
+			}
+		}  
+		var targetPosition = 48; // top position of document pointer
+		// scrolling down
+		if (pxDelta > 0) {
+			targetScrollTop = scrollTop + pxDelta;
+			var nextItem = currentItem.next('.loadonscroll');
+			if(nextItem.length > 0) {
+				var nextItemUpperBound = nextItem.position().top;
+				var toMove = nextItemUpperBound + 5 - targetPosition;
+				var nextItemUpperBoundScrollPosition = scrollTop + toMove;
+        		var tolerance = scrollDistance/2;
+				if ((targetScrollTop + tolerance) > nextItemUpperBoundScrollPosition) {
+					targetScrollTop = nextItemUpperBoundScrollPosition + 5;
+				}
+			}
+		}
+		// scrolling up
+		else {
+			targetScrollTop = scrollTop + pxDelta;
+			var previousItem = currentItem.prev('.loadonscroll');
+			if(previousItem.length > 0) {
+				var previousItemUpperBound = previousItem.position().top;
+				var toMove = previousItemUpperBound - 5 - targetPosition;
+				var previousItemUpperBoundScrollPosition = scrollTop + toMove;
+        		var tolerance = scrollDistance/2;
+				if ((targetScrollTop - tolerance) < previousItemUpperBoundScrollPosition) {
+					targetScrollTop = previousItemUpperBoundScrollPosition - 5;
+				}
+			}
+		}
+		$('#content').scrollTop(targetScrollTop);
+	}
+	lastWheel = now;
+};
+
+function preventDefault(e) {
+	e = e || window.event;
+	if (e.preventDefault)
+		e.preventDefault();
+	e.returnValue = false;
+}
+
+// Copied from r4 (documentpointer.js)
+
+function getLOSPartsInView(offset, onlyFirst) {
+	var losParts = $(".loadonscroll");
+	var scrollContainer = losParts.first().offsetParent();
+
+	var partsInView = [];
+	var viewUpperEnd = offset;
+	var viewLowerEnd = scrollContainer.height();
+	for (var i = 0; i < losParts.length; i++) {
+		var currentPart = losParts.slice(i, i + 1);
+
+		var upperEnd = currentPart.position().top;
+		var lowerEnd = upperEnd + currentPart.height();
+
+		var startsInOrAboveView = upperEnd < viewLowerEnd;
+		var endsInOrUnderView = lowerEnd > viewUpperEnd;
+
+		if (!startsInOrAboveView) {
+			break;
+		} else if (endsInOrUnderView) {
+			// starts in or above view and ends in or under view -> part is in
+			// view
+			if (onlyFirst) {
+				return currentPart;
+			} else {
+				partsInView.push(currentPart);
+			}
+		}
+	}
+	return partsInView;
+}
+function getFirstLOSPartInView(offset) {
+	return getLOSPartsInView(offset, true);
+}

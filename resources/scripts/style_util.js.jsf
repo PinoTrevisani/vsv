@@ -1,0 +1,86 @@
+/**
+ * Utility class for general styling related methods
+ * 
+ * @author nbe
+ */
+var StyleUtil = (function() {
+	
+	
+		/**
+		 * 
+		 * calculates the total height of an amount of rows (specified in intRows)
+		 * based on the height (or the outerHeight) of a single row 
+		 * 
+		 * @param intRows
+		 * @param objRowClass
+		 * @param boolOuterHeight
+		 * @returns
+		 */
+		getRowGroupHeight = function(intRows, objRowClass, boolOuterHeight) {
+			if (intRows !== undefined && objRowClass instanceof jQuery) {
+				
+				if (boolOuterHeight === true) {
+					return objRowClass.outerHeight(true) * intRows;
+				} else {
+					return objRowClass.height() * intRows;
+				}
+			} 
+			return -1;
+		}
+		
+		
+		/**
+		 * 
+		 * sets the max-height of a container given in {@param objContainerSelector} by specifying the 
+		 * amount of rows which should be visible
+		 * 
+		 * @param intVersionRows
+		 * @param objRowSelector
+		 * @param objContainerSelector
+		 * @param boolOuterHeight
+		 * @returns
+		 */
+		setContainerMaxHeightByRows = function(intVersionRows, objRowSelector, objContainerSelector, boolOuterHeight) {
+			var versionCounter = objRowSelector.length;
+			
+			// if row count is more than allowed
+			if (versionCounter > intVersionRows) {
+				
+				var rowHeight = getRowGroupHeight(intVersionRows,objRowSelector.first(), boolOuterHeight);
+				
+				if (rowHeight > 0) {
+					objContainerSelector.css("max-height", rowHeight);
+				}
+			}
+			
+		}
+		
+		/**
+		 * 
+		 * method to set the active class name {@param strActiveClassName} for a given element {@param objElement}
+		 * 
+		 * @param objElement
+		 * @param strActiveClassName
+		 * @param objElementScope
+		 * @returns
+		 */
+		setActive = function(objElement, strActiveClassName, objElementScope) {
+			if (objElement instanceof jQuery 
+					&& strActiveClassName != "") {
+				
+				// clear existing active status if required
+				objElementScope.removeClass(strActiveClassName);
+				
+				// set new active status
+				objElement.addClass(strActiveClassName);
+			} 
+		}
+	
+	// public method definition
+	return {
+		getRowGroupHeight : getRowGroupHeight,
+		setContainerMaxHeightByRows : setContainerMaxHeightByRows,
+		setActive : setActive
+	};
+	
+})();

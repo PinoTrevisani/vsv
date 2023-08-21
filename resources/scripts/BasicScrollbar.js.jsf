@@ -1,0 +1,433 @@
+
+function BasicScrollbar(target, bar, viewport, scrollbarHideElement, options) {
+	this.target = target;// the container with text
+	this.viewport = viewport;// the container who scroll
+	this.bar = bar;
+	this.scrollbarHideElement = scrollbarHideElement; // the element that is used to hide the scrollbar
+	this.options = {
+		buttons : {
+			top : true,
+			up : true,
+			down : true,
+			bottom : true
+		},
+		pageSize : function() {
+			return $(window).height();
+		},
+		factor:0.2,
+		titleClass :".htmlTooltipHover"
+	};
+	this.base = 0;
+	this.options = $.extend(this.options, {}, options);
+	this.chapterList = new Array();
+	this.currentChaper = null;
+	this.isDragging = false;
+	this.init();
+}
+
+BasicScrollbar.prototype = {
+	// defines the enums for selector the control or container elements
+	// with there specified values
+	Q_CONTROL : "data-control",
+	Q_CONTAINER : "data-container",
+	Q_CONTROL_BUTTON : "scrollbar-button",
+	CONTROL : {
+		TOP : "goTop",
+		UP : "goUp",
+		POS : "position",
+		DOWN : "goDown",
+		BOTTOM : "goBottom"
+	},
+	CONTAINER : {
+		TOP : "top",
+		MIDDLE : "middle",
+		BOTTOM : "bottom"
+	},
+	/**
+	 * initialize plugin
+	 */
+	init : function() {
+		var that = this;
+		this.refreshChapter();
+		this.updateBar();
+		this.initListener();
+		this.initScrollHandler();
+	},
+	/**
+	 * init the draggable plugin to position pointer
+	 */
+	initScrollHandler : function() {
+		var that = this;
+		$(this.getPositionPointer()).draggable({
+			axis : "y",
+			containment : "parent",
+//			snap : $(that.bar).find(".scrollbar-position-panel"),
+//			stack : $(that.bar).find(".scrollbar-position-panel"),
+			containment : $(that.bar).find(".scrollbar-position-panel"),
+			helper : "clone",
+			start : function(evt, ui) {
+				that.isDragging = true;
+				$(ui.helper).width($(this).width());
+				$(this).hide();
+			},
+			drag : function(evt, ui) {
+				var val = ui.offset.top - that.base;
+				if(val<0) val=0;
+//				that.pointerScroll(val);
+				that.pointerScrollTo(val);
+			},
+			stop : function(evt, ui) {
+				that.isDragging = false;
+				var val = ui.offset.top - that.base;
+				if(val<0) val=0;
+				that.pointerScrollTo(val);
+				that.updatePositionPointer(evt);
+				$(this).show();
+			}
+		});
+	},
+	
+	refreshChapter : function() {
+		var that = this;
+		that.chapterList = new Array();
+		$(this.viewport).find("[nodeid]").each(function(k, v) {
+			that.chapterList.push($(v).attr("nodeid"));
+		});
+	},
+	/**
+	 * central method to update a scroll button element
+	 */
+	__updateContainerHeight : function(container) {
+		var height = 0;
+		$(container).find("." + this.Q_CONTROL_BUTTON).each(function(k, v) {
+			height += $(v).outerHeight();
+		});
+		$(container).height(height);
+	},
+
+	/**
+	 * update wrapper
+	 */
+	updateBar : function() {
+		if($(this.viewport).height()>=$(this.target).height()){
+			$(this.bar).hide();
+		}else{
+			$(this.bar).show();
+			this.updateBarHeight();
+			this.updateBarWidth();
+			this.updateTopButtonPanel();
+			this.updateBottomButtonPanel();
+			this.updatePositionPanel();
+			this.updatePositionPointer();
+		}
+	},
+
+	/**
+	 * update the top button
+	 */
+	updateTopButtonPanel : function() {
+		this.__updateContainerHeight($(this.bar).find("[" + this.Q_CONTAINER + "=" + this.CONTAINER.TOP + "]"));
+	},
+	/**
+	 * update the bottom button
+	 */
+	updateBottomButtonPanel : function() {
+		this.__updateContainerHeight($(this.bar).find("[" + this.Q_CONTAINER + "=" + this.CONTAINER.BOTTOM + "]"));
+	},
+	/**
+	 * updates the smartscrollbar dom
+	 */
+	updateBarHeight : function() {
+		var height = $(this.viewport).height();
+		$(this.bar).css({
+			"height" : height,
+			"max-height" : height
+		});
+	},
+	updateBarWidth : function() {
+		var scrollbarWidth = this.getScrollBarWidth();
+		$(this.bar).css({"width" : scrollbarWidth,});
+		$(this.scrollbarHideElement).css({"left" : -scrollbarWidth});
+	},
+	/**
+	 * updated the position pointer element
+	 * 
+	 */
+	updatePositionPointer : function(evt) {
+		var panelHeight = this.getPositionPanel().height();
+		var pointer = this.getPositionPointer();
+		var fact = $(this.viewport).height() / this.targetHeight();
+		var pointerHeight = Math.min(Math.max(Math.floor(panelHeight * fact), 16),panelHeight);
+		$(pointer).height(pointerHeight + "px");
+		// re-get pointer height since it may have a min-size
+		pointerHeight = $(pointer).height();
+		var textPosition = this.getTextPosition();
+		if (!(textPosition >= 0)) {
+			return;
+		}
+
+		var donePercent = 0;
+		var diff = this.targetHeight()-$(this.viewport).height();
+		if (textPosition > 0 && diff > 0) {
+			donePercent = textPosition / diff;
+		}
+		donePercent = Math.min(donePercent, 1);
+		
+		$(pointer).css("top", Math.min((panelHeight - pointerHeight) * donePercent,panelHeight));
+	},
+	/**
+	 * get text scrolled position in viewport
+	 */
+	getTextPosition : function() {
+		return $(this.viewport).scrollTop();
+	},
+
+	updateTarget : function() {
+
+	},
+
+	scroll : function(evt) {
+
+	},
+	/**
+	 * load content height
+	 */
+	targetHeight : function() {
+		return $(this.target).height();
+	},
+	/**
+	 * calculate factor of position panel height to document height (document
+	 * means the content height in viewport)
+	 */
+	factor : function() {
+		return this.getPositionPanel().height() / this.targetHeight();
+	},
+	/**
+	 * method to pageScroll action
+	 */
+	pageScroll : function(direction, factor) {
+		factor = factor == null ? 1 : factor;
+		var distance = this.getPageSize() * factor;
+		var target = 0;
+		if ("up" === direction) {
+			target = this.getTextPosition() - distance;
+		} else if ("down" === direction) {
+			target = this.getTextPosition() + distance;
+		}
+		$(this.viewport).scrollTop(target);
+	},
+	/**
+	 * set the current title by given position of position pointer
+	 */
+	updateTitle : function(pos) {
+		var elem = this.getDocElemByOffset(pos);
+		if (elem != null && $(elem).length > 0) {
+			var aTag = $(elem).find(this.options.titleClass);
+			this.title = $.trim($(aTag).attr("title"));
+			if (!!isNullOrEmpty(this.title)) {
+//				console.log(elem);
+			}
+		}
+		$(this.getPositionPointer()).attr("title", this.title);
+	},
+	/**
+	 * determine which chapter is focused by given position pointer position
+	 * 
+	 */
+	getDocElemByOffset : function(pos) {
+		var chunkcount = this.chapterList.length;
+		var chunksize = ($(this.getPositionPanel()).height() - $(this.getPositionPointer()).height()) / chunkcount;
+		var idx = 0;
+		for (var i = 0; i < chunkcount && chunksize * i < pos; i++) {
+			idx = i;
+		}
+		return idx < this.chapterList.length ? $("[nodeid='" + this.chapterList[idx] + "']") : null;
+	},
+	/**
+	 * calculates the position in text relative to the position of the pointer
+	 * in position panel
+	 */
+	calculateTextPosition : function(val) {
+		if (!(val > 0))
+			return 0;
+		return val / this.factor();
+	},
+	/**
+	 * virtual scroll command
+	 */
+	pointerScroll : function(val) {
+		this.updateTitle(val);
+	},
+	/**
+	 * real scroll command
+	 * val is the pixel value that the pointer has moved from base of the scrollbar
+	 */
+	pointerScrollTo : function(val) {
+		var maxScroll   = this.getPositionPanel().height() - $(this.getPositionPointer()).outerHeight() + 1; // + 1 since val is the top pixel of the pointer itself
+		var donePercent = 0;
+		if(maxScroll > 0 && val > 0) {
+			donePercent = val / maxScroll;
+		}
+		donePercent = Math.min(donePercent, 1);
+		
+		$(this.viewport).scrollTop((this.targetHeight() - $(this.viewport).height()) * donePercent);
+	},
+	scrollTo:function(elem){
+		if(elem==null||0==$(elem).length)return;
+		$(this.viewport).scrollTop($(elem).offset().top);
+	},
+	/**
+	 * update the properties of the position panel updates height
+	 */
+	updatePositionPanel : function() {
+		var posPanel = $(this.getPositionPanel());
+		posPanel.outerHeight($(this.bar).innerHeight() - this.getButtonPanelHeight());
+		this.base = posPanel.offset().top;
+	},
+	/**
+	 * init all listener scroll_done scroll window and viewport click in
+	 * position bar click on scroll buttons
+	 */
+	initListener : function() {
+		var that = this;
+		$(window).bind("tree_loaded", function(e) {
+			that.updateBar();
+			that.refreshChapter();
+		});
+		$(window).bind("scroll_done", function(e) {
+			that.updatePositionPanel();
+			that.updatePositionPointer();
+		})
+		$(window).bind("resize", function(e) {
+			that.updateBar();
+		});
+		$(window).bind("setSizes_done", function(e) {
+			that.updateBar();
+		});
+		$(this.viewport).bind("scroll", function(e) {
+			if(!that.isDragging) {
+				that.updatePositionPointer(e);
+			}
+		});
+		$(this.viewport).bind("scrollstop", function(e) {
+			if(!that.isDragging) {
+				that.updatePositionPointer(e);
+				var evt = new $.Event("scroll_done");
+				evt.position = $(that.viewport).scrollTop();
+				evt.viewport = "#" + $(that.viewport).attr("id");
+				$(window).trigger(evt);
+			}
+		});
+		$(this.viewport).bind("resize", function() {
+			that.updateBar();
+		});
+		$(window).bind("scrollbar.update",function(){
+			that.updateBar();
+		});
+		$(window).bind("document_changed", function(e) {
+			that.currentChaper = e.alias;
+		});
+		$(this.getPositionPanel()).bind("click scroll", function(e) {
+			var pointer = $(that.getPositionPointer());
+			var pointerPos = parseInt($(pointer).css("top"));
+			var pointerHeight = $(pointer).height();
+			var point = pointerHeight / 2 + pointerPos;
+			e.offsetY < point ? that.pageUp() : that.pageDown();
+		});
+		var btnConf = this.options.buttons;
+		if (btnConf.top === true) {
+			$(this.bar).find("[" + this.Q_CONTROL + "=" + this.CONTROL.TOP + "]").bind("click", function() {
+				that.top();
+			});
+		}
+		if (btnConf.up === true) {
+			$(this.bar).find("[" + this.Q_CONTROL + "=" + this.CONTROL.UP + "]").bind("click", function() {
+				that.up();
+			});
+		}
+		if (btnConf.down === true) {
+			$(this.bar).find("[" + this.Q_CONTROL + "=" + this.CONTROL.DOWN + "]").bind("click", function() {
+				that.down();
+			});
+		}
+		if (btnConf.bottom === true) {
+			$(this.bar).find("[" + this.Q_CONTROL + "=" + this.CONTROL.BOTTOM + "]").bind("click", function() {
+				that.bottom();
+			});
+		}
+	},
+	/**
+	 * calculates the height of each scroll button (top,up,down,bottom)
+	 */
+	getButtonPanelHeight : function() {
+		var height = 0;
+		$(this.bar).find("[" + this.Q_CONTAINER + "][" + this.Q_CONTAINER + "!=" + this.CONTAINER.MIDDLE + "]").each(function(k, v) {
+			height += $(v).outerHeight();
+		});
+		return height;
+	},
+	/**
+	 * evaluate the page size check if options is a function
+	 */
+	getPageSize : function() {
+		switch (typeof (this.options.pageSize)) {
+		case "function":
+			return this.options.pageSize();
+		default:
+			return this.options.pageSize;
+		}
+	},
+	/**
+	 * factor is bar/target
+	 */
+	getFactor : function() {
+		return $(this.getPositionPanel()).height() / $(this.target).find("div:first").height();
+	},
+
+	getPositionPanel : function() {
+		return $(this.bar).find(".scrollbar-position-panel");
+	},
+
+	getPositionPointer : function() {
+		return $(this.bar).find("[" + this.Q_CONTROL + "=" + this.CONTROL.POS + "]");
+	},
+
+	pageUp : function() {
+		this.pageScroll("up", 1);
+	},
+	pageDown : function() {
+		this.pageScroll("down", 1);
+	},
+	up : function() {
+		this.pageScroll("up", this.options.factor);
+	},
+	down : function() {
+		this.pageScroll("down", this.options.factor);
+	},
+	getScrollBarWidth : function () {
+		var inner = document.createElement('p');
+		inner.style.width = "100%";
+		inner.style.height = "200px";
+	
+		var outer = document.createElement('div');
+		outer.style.position = "absolute";
+		outer.style.top = "0px";
+		outer.style.left = "0px";
+		outer.style.visibility = "hidden";
+		outer.style.width = "200px";
+		outer.style.height = "150px";
+		outer.style.overflow = "hidden";
+		outer.appendChild (inner);
+	
+		document.body.appendChild (outer);
+		var w1 = inner.offsetWidth;
+		outer.style.overflow = 'scroll';
+		var w2 = inner.offsetWidth;
+		if (w1 == w2) w2 = outer.clientWidth;
+	
+		document.body.removeChild (outer);
+	
+		return (w1 - w2);
+	}
+		
+};

@@ -1,0 +1,6 @@
+// Maybe this can be used to make accesskeys configurable
+
+$(document).ready(function(){
+	$('[data-accesskey-pagination-next]').first().attr('accesskey', $('[data-accesskey-pagination-next]').attr('data-accesskey-pagination-next'));
+	$('[data-accesskey-pagination-previous]').first().attr('accesskey', $('[data-accesskey-pagination-previous]').attr('data-accesskey-pagination-previous'));
+});    

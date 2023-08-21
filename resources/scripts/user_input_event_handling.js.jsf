@@ -1,0 +1,113 @@
+// here all functions are defined that are used in different event bindings like the attribute event binding via onclick and onkeyup attributes.
+
+var userInputEvent = 'mouseup keyup';
+
+function isUserInputEvent(event) {
+	return (event && ((((event.type == 'mouseup' && event.which == 1) || event.type == 'pointerup' || event.type == 'click')) || (event.type == 'keyup' && (event.key == 'Enter' || event.key == ' '))));
+}
+
+function applyUserInputDelegatedEventHandling(selector, func) {
+	if ((typeof selector == 'string') && (typeof func == 'function')) {
+		$(document).on(userInputEvent, selector, function(e){
+			if (isUserInputEvent(e)) {
+				func(e);
+			}
+		});
+	}
+}
+
+function checkAndExecuteUserInputEventHandling(event, func) {
+	if ((isUserInputEvent(event)) && (typeof func == 'function')) {
+		func(event);
+	}
+}
+
+function emptyInputField(event, selector) {
+	checkAndExecuteUserInputEventHandling(event, function(event){
+		var selection = $(selector);
+		if ((selection.length > 0) && (selection.val() !== undefined)) {
+			selection.val('');
+			return false;
+		}
+	});
+}
+
+function triggerClickOnElement(event, selector) {
+	checkAndExecuteUserInputEventHandling(event, function(event){
+		event.preventDefault();
+		$(selector).click();
+	});
+}
+
+
+$(document).ready(function(){
+		
+	$(document).on('keydown', function(e) {
+		if (e.altKey === true) {
+			var isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+			if (!isFirefox || (isFirefox && e.shiftKey)) {
+				var key = e.keyCode || e.charCode;
+				switch (key) {
+					case (49):
+						$('#baumLink').focus();
+						break;
+					case (50):
+						$('#seitenanfang2').focus();
+						break;
+					case (51):
+						$('#seitenanfang1').focus();
+				}
+			}
+		}
+	});
+	
+	applyUserInputDelegatedEventHandling('[tabindex].printManagerLink', function(e){
+		printTree.gotoAlias($(event.target).attr('data-alias'));
+	});
+	
+	applyUserInputDelegatedEventHandling('[data-alias][tabindex].icon.delete', function(e){
+		printTree.uncheck($(event.target).attr('data-alias'));
+		$(e.target).closest('.row').next('.spacerFirst').remove();
+		$(e.target).closest('.row').remove();
+		$('#refreshPrintTreeBtn').click();
+	});
+
+	applyUserInputDelegatedEventHandling('.edit-my', function(e){
+		var docId = $(e.target).closest('[data-docid]').attr('data-docid');
+		var type = $(e.target).closest('[data-type]').attr('data-type');
+		var title = $(e.target).closest('[data-title]').attr('data-title');
+		var alias = $(e.target).closest('[data-alias]').attr('data-alias');
+		__global_current_edit_tree_entry_info_object = {
+			docId: docId,
+			type: type,
+			title: title,
+			alias: alias
+		};
+		updateParams({
+			event: 'navigation',
+			alias: alias,
+			docId: docId
+		}, function(e) {
+			$('#editModalRerender').click();
+		});
+	});
+
+	applyUserInputDelegatedEventHandling('.delete-my', function(e){
+		// TODO: implement
+	});
+
+	applyUserInputDelegatedEventHandling('#printmarkslink', function(e){
+		printMarkStatusManager.togglePrintMarks();
+		return false;
+	});
+
+	applyUserInputDelegatedEventHandling('.toggle-toc', function(e) {
+		toggleToc();
+	});
+	
+	let mainLeft = $('#mainleft');
+	if((getCookie('toc') == 'closed' && mainLeft.is(':visible'))
+	     || (getCookie('toc') == 'open' && !mainLeft.is(':visible'))) {
+    toggleToc();
+  }
+});

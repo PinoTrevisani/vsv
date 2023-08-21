@@ -1,0 +1,73 @@
+html{
+	height: 100%;
+}
+
+body{
+	height: 100%;
+}
+
+.outlookDiv{
+	width: 100%;
+	height: 100%;
+}
+
+.tabDiv{
+	margin-bottom: 3px;
+}
+
+.outlookDiv div:last-of-type {
+/*     margin-bottom: 0; */
+}
+
+.tHeadDiv{
+	height: 30px;
+	background-color: #65c2ff;
+	border: 1px solid black;
+}
+
+
+
+.thead-iconleft{
+	float: left;
+	margin: 8px;
+}
+
+.thead-value{
+	float: left;
+	margin: 4px;
+}
+
+.thLink{
+	display: block;
+    height: 100%;
+    width: 100%;
+    text-decoration: none;
+    color: #fff;
+}
+
+.tBodyDiv{
+	border-bottom: 1px solid black;
+    border-left: 1px solid black;
+    border-right: 1px solid black;
+    overflow: auto;
+    width: calc(100% - 2px);
+}
+
+.activeTabHead .arrow {
+	width: 0; 
+	height: 0; 
+	border-left: 7px solid transparent;
+	border-right: 7px solid transparent;	
+	border-top: 7px solid #eee;
+	margin-top: 13px;
+}
+
+.inactiveTabHead .arrow {
+	width: 0; 
+	height: 0; 
+	border-top: 7px solid transparent;
+	border-bottom: 7px solid transparent;	
+	border-left: 7px solid #eee;
+	margin-left: 12px;
+	padding-right: 3px;
+}

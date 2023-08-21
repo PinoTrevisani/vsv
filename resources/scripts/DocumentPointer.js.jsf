@@ -1,0 +1,123 @@
+//basic impl!
+function DocumentPointer(dom) {
+	this.dom = dom;
+	this.top = 0;
+	this.bottom = 0;
+	this.currentDocId = undefined;
+	this.alias = undefined;
+	this.lastDocId = undefined;
+	this.isOpen=false;
+	this.scrollContainer = undefined;
+	this.lastAjax=null;
+}
+
+DocumentPointer.prototype = {
+	init : function() {
+		var that=this;
+		$(window).one("LOSInitialized", function(e){
+			that.currentDocument({"viewport" : that.scrollContainer});
+			$(window).on("document_loaded",function(e){
+				that.currentDocument(e);
+			});
+			$(window).on("scroll_done",function(e){
+				if(that.scrollContainer == undefined || e.viewport==that.scrollContainer){
+					that.onScroll(e);
+				}
+			});
+			$(this.dom).hover(function(){
+				$(window).trigger("pointer.hover");
+			},function(){
+				$(window).trigger("pointer.unhover");
+			});
+		});
+	},
+	refresh : function() {
+		this.top = $("[data-pointer=top]:first").offset().top;
+		this.bottom = $("[data-pointer=top]:last").offset().top;
+	},
+	onScroll : function(e) {
+		this.refresh();
+		this.currentDocument(e);
+	},
+	currentDocument : function(e) {
+		var that = this;
+		this.lastDocId=this.currentDocId;
+		var tag = this.determinePart(e);
+		if($(tag).length>0){
+			this.currentDocId = $.trim($(tag).attr("name"));
+			this.alias = $.trim($(tag).attr("alias"));
+			if(this.alias==null||isNullOrEmpty(this.alias)){
+				this.alias = $.trim($(tag).attr("data-alias"));
+			}	
+			if (this.lastDocId !== this.currentDocId){
+				this.changed();
+			}
+		}
+		
+	},
+	determinePart:function(e){
+		var offset =0;
+		if(shiR4config.customLosOffset!=null){
+			offset = Math.abs(shiR4config.customLosOffset) + $(this.dom).height()/3;
+		}
+		var tag = e.viewport==null||e.viewport==="window"?$(".loadonscroll:in-viewport:first").find("a[name]"):$(".loadonscroll:in-viewport("+offset+","+e.viewport+"):first").find("a[name]");
+		return tag;
+	},
+	isAllowed:function(){
+		if(typeof(noPointer)==="boolean" && noPointer===true){
+			return false;
+		}
+		return true;
+	},	
+	changed : function() {
+		var that=this;
+		if(!this.isAllowed()){
+			return;
+		}
+		this.isOpen = $(shiR4config.contextMenueId).is(":visible");
+		$(".loadonscroll.active").removeClass("active");
+		$("#textMarkerContainer").removeAttr("id");
+		var node = $("a[name='" + this.currentDocId + "']").closest(".loadonscroll");
+		$(node).addClass("active");
+		$(node).find(".losContent").attr("id","textMarkerContainer");
+		this.updateForm();
+		var event = $.Event("document_changed");
+		event.docId = this.currentDocId;
+		event.lastDocId = this.lastDocId;
+		event.alias = this.alias;
+		event.isOpen=this.isOpen;
+		
+		if(this.lastAjax!=null){
+			this.lastAjax.abort();
+		}
+		this.lastAjax =$.ajax({
+			url : contextPath + "/paramUpdate",
+			dataType : "html",
+			contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+			cache : false,
+			data : {
+				event : "navigation",
+				docId : this.currentDocId,
+				alias : this.alias
+			},
+			success : function(data, textStatus, jqXHR) {
+				$(window).trigger(event);
+			},			
+			error : function(jqXHR, textStatus, errorThrown) {				
+			},
+			complete:function(jqXHR,textStatus){
+				that.lastAjax=null;
+			}
+		}); 
+	},
+	updateForm : function(){
+		$('#refreshContextForm').find("[name=docId]").val(this.currentDocId);
+		$('#refreshContextForm').find("[name=alias]").val(this.alias);
+		$("#refreshContextBtn").click();
+	},
+	setScrollContainer : function(selector){
+		this.scrollContainer = selector;
+	}
+}
+
+

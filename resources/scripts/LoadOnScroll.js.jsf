@@ -1,0 +1,611 @@
+var LOS = new SHILoadOnScroll();
+
+
+
+
+function SHILoadOnScroll() {
+
+	var iframeContents = null;
+	var docContainerEle = null;
+	var docContainerBody = null;
+	var scrollEle = null;
+	var scrollEventEle = null;
+	var docWindow = null;
+	var currentDoc = null;
+	var docVisibleHeightEle = null;
+	var isScrollableDiv = false;
+	var toLoad = new Array();
+	var that = this;
+	var isInit=false;
+
+	function init() {
+		$(window).on("document_load", function(e) {
+			if(!isInit){
+				return;
+			}
+			var elem = $("a[name='" + e.docId + "'],a[data-alias='" + e.alias + "'],a[name='" + e.alias + "'],a[data-alias='" + e.docId + "']").first().closest(".loadonscroll");
+			if ($(elem).attr("alreadySet") == "true") {
+				var evt = new $.Event("scroll_to");
+				evt.docId = e.docId;
+				evt.alias = e.alias;
+				evt.scrollBottom = e.scrollBottom;
+				evt.viewport = scrollEle === window ? null : $(scrollEle).attr("id");
+				$(window).trigger(evt);
+			} else {
+				that.loadDoc(e.docId,function() {
+					var evt = new $.Event("document_loaded");
+					evt.docId = e.docId;
+					evt.alias = e.alias;
+					$(window).trigger(evt);
+					if (e.scroll === true) {
+						evt.type = "scroll_to";
+						evt.viewport = scrollEle === window ? null : $(scrollEle).attr("id");
+						evt.scrollBottom = e.scrollBottom;
+						$(window).trigger(evt);
+					}
+				});
+			}
+
+		});
+		$(window).on("scroll_to", function(e) {
+			var vp = e.viewport || window;
+			if (typeof (vp) === "string") {
+				vp = "#" + vp;
+			} else if (vp instanceof Object) {
+				vp = "#" + $(vp).attr("id");
+			}
+			//take the next elem! the a is hidden/height=0 so mad browsers(firefox) calculate the offset to the elem wrong!
+			var elem = $("a[name='" + e.docId + "'],a[data-alias='" + e.alias + "'],a[name='" + e.alias + "'],a[data-alias='" + e.docId + "']").first().next();
+			if(elem == null || elem.length < 1) {
+				return;
+			}
+			
+			// in some cases we have to scroll at bottom after document has loaded
+			if(e.scrollBottom) {
+				scrollEle.scrollTop(scrollEle[0].scrollHeight);
+			} else {
+				that.scrollToIframeElem(elem, function(){
+					var evt = new $.Event("scroll_done");
+					evt.position = $("a[name='" + e.docId + "'],a[data-alias='" + e.alias + "'],a[name='" + e.alias + "'],a[data-alias='" + e.docId + "']").first().offset().top;
+					evt.viewport = typeof (vp) === "string" ? vp : "window";
+					$(window).trigger(evt);
+				}, true);
+			}
+			
+		});
+
+		$(window).on("scroll_done", function(e) {
+		});
+
+		$(window).on("los.prepare.document", function(e) {
+			var elem = $("a[name='" + e.docId + "'],a[data-alias='" + e.alias + "'],a[name='" + e.alias + "'],a[data-alias='" + e.docId + "']").first().closest(".loadonscroll");
+			loadLoadOnScrollContent(elem, function() {
+				$(window).trigger("los.document.done");
+			});
+		});
+		docContainerEle = $("#contentContainer");
+		if (docContainerEle.length < 1) {
+			// no iframe
+			iframeContents = docContainerEle = docContainerBody = scrollEle = docVisibleHeightEle = $("#contentContainer");
+			// scrollContainer may be div or window
+			if (scrollEle.attr("isScrollContainer") == "false") {
+				scrollEventEle = $(window);
+				scrollEle = $("html,body");
+				docVisibleHeightEle = $(window);
+			} else {
+				isScrollableDiv = true;
+			}
+			docWindow = window;
+		} else {
+			// iframe
+			docContainerBody = $("#contentContainer");
+
+			if ($("[scrollEle=true]").length > 0) {
+				docContainerBody = $("[scrollEle=true]:first");
+			}
+			docWindow = $("[data-use-for=docWindow]").length > 0 ? $("[data-use-for=docWindow]:first") : $(window);
+			scrollEle = docContainerBody;
+			if (scrollEle.attr("isScrollContainer") == "true") {
+				isScrollableDiv = true;
+			}
+			scrollEventEle = $(docWindow);
+			iframeContents = docContainerEle.contents();
+			docVisibleHeightEle = docContainerEle;
+		}
+		currentDoc = getCurrentDoc();
+	}
+
+	function getOffsetToAdd() {
+		if (scrollEle.attr("isScrollContainer") == "true") {
+			isScrollableDiv = true;
+		}
+		var offset=0;
+		if(shiR4config.customLosOffset!=null){
+			offset=shiR4config.customLosOffset;
+		}
+		
+		if (isScrollableDiv) {
+			return -docContainerEle.offset().top+offset;
+		} else {
+			return offset;
+		}
+	}
+
+	/**
+	 * To be called when iframe's doc is ready.
+	 */
+	that.onIframeDocReady = function() {
+		init();
+		// add iframe-wrapping-element, to get correct height in all browsers,
+		// including IE9 and WebOnDisk
+		// if (iframeContents.find("#iframeBody").length < 1) {
+		// docContainerBody.wrapInner("<div id='iframeBody'></div>");
+		// }
+		// insert empty height div at the end of document
+		if (typeof (g_isScaffold) != "undefined" && g_isScaffold) {
+			$(iframeContents).append("<div id='scaffoldEndHeightDiv'></div>");
+			if($("#scaffoldEndHeightDiv").length>1){
+				$("#scaffoldEndHeightDiv:first").remove();
+			}
+		}
+		// "iframe padding"
+		// docContainerBody.css({
+		// "width" : "98%",
+		// "padding-left" : "2%",
+		// });
+		setIframeContentStyles();
+		setScaffoldEndDivHeight();
+		setTimeout(function() {
+			// if no current doc then just go on with loading divs
+			loadInitialDoc();
+		}, 100);
+	},
+	that.loadDoc=function(docId,callback){
+		var defr = new $.Deferred();
+		defr.done(function(){
+			if(typeof(callback)=="function"){
+				callback();
+			}
+		});
+		that.toLoad = new Array();
+		that.toLoad.push(docId);
+		var select = $(iframeContents).find("[class~=\"" + docId + "\"]");
+		var currentSelect = select;
+		for(var i = 0;i<shiR4config.losPartsBefore;i++){
+			currentSelect = currentSelect.prev();
+			if(currentSelect.length>0)
+				that.toLoad.push($(currentSelect).first().find("a[name]").attr("name"));
+		}
+		currentSelect = select;
+		for(var i = 0;i<shiR4config.losPartsAfter;i++){
+			currentSelect = currentSelect.prev();
+			if(currentSelect.length>0)
+				that.toLoad.push($(currentSelect).first().find("a[name]").attr("name"));
+		}
+		for(var i = 0;i<that.toLoad.length;i++){
+			_loadDoc(defr,that.toLoad[i]);
+		}
+	};
+
+	function setScaffoldEndDivHeight() {
+		$("#iframeBody #scaffoldEndHeightDiv").height($(scrollEle).height() - 100);
+	}
+
+	function setIframeContentStyles() {
+		iframeContents.find(".prevHighlighting").css({
+			'cursor' : 'pointer'
+		});
+		iframeContents.find(".nextHighlighting").css({
+			'cursor' : 'pointer'
+		});
+		iframeContents.find(".loadonscroll .losTitle").css({
+			'font-family' : 'arial',
+		});
+
+		iframeContents.find('.loadonscroll .losTitle').css("height", shiR4config.losdefaultheight);
+	}
+	// ----------------------------------------------------------------------------------------------------
+	// functions concerning initial loading
+	// ----------------------------------------------------------------------------------------------------
+	function getCurrentDoc() {
+		var currentDoc = getUrlParam("docId");
+		if (currentDoc == null || currentDoc == "" || currentDoc == undefined) {
+			
+			// try to find docId based on alias
+			currentDoc = getDocIdFromAlias(getUrlParam("alias"));
+			
+			if (currentDoc == null || currentDoc == "" || currentDoc == undefined) {
+				currentDoc = $(".savedDocIdForLos").val();
+	
+				if (currentDoc == null || currentDoc == "" || currentDoc == undefined) {
+					currentDoc = $("#documentContent iframe").attr("src");
+					if (currentDoc != null && currentDoc != "" && currentDoc != undefined) {
+						currentDoc = currentDoc.replace(/(.*)\?.*/, "$1");
+						currentDoc = currentDoc.replace(/(.*)#.*/, "$1");
+					}
+				}
+			}
+		} else {
+			currentDoc = unescape(currentDoc);
+		}
+		if (currentDoc == null || currentDoc == undefined) {
+			currentDoc = "";
+		}
+		return currentDoc;
+	}
+	
+	function getDocIdFromAlias(alias) {
+		if(alias == null && alias == "") {
+			return null;
+		}
+		
+		var doc = null;
+		var elem = $('.loadonscroll > a[data-alias="' + alias + '"]');
+		if(elem.length > 0) {
+			doc = elem.attr("name");
+		}
+		
+		return doc;
+	}
+	
+	function resolveing(defr,docId){
+		var del = that.toLoad.indexOf(docId);
+		if(!(del<0)){
+			delete that.toLoad[del];
+		}
+		var remain = that.toLoad.filter(function(item){
+			return item!=undefined;
+		});
+		if(remain.length===0){
+			defr.resolve();
+		}
+	}
+	function loadInitialDoc() {
+		var scrollToDoc = currentDoc;
+		if (!isNullOrEmpty(scrollToDoc)) {
+			that.loadDoc(scrollToDoc,function(){
+				isInit=true;
+				doInitialScrolling(doAfterInitialScrolling);
+			});
+		} else {
+			isInit=true;
+			doInitialScrolling(doAfterInitialScrolling);
+		}
+	}
+	function _loadDoc(defr,docId){
+		that.getLoadOnScrollContent($(iframeContents).find("[class~=\"" + docId + "\"]"), function() {
+			resolveing(defr,docId);
+		});
+	}
+	function doInitialScrolling(callback) {
+		// scroll to specific highlighting term, if set
+		var hitNr = getUrlParam("hitNr");
+		if (hitNr == undefined || hitNr == null || hitNr == "") {
+			hitNr = 0;
+		}
+		var scrollAnchor;
+		if(currentDoc==undefined){
+			scrollAnchor = currentDoc;
+		} else {
+			scrollAnchor = currentDoc.trim();
+		}
+		var scrollTargetContents = iframeContents;
+		var foundLosDivs = iframeContents.find("[class~=\"" + scrollAnchor + "\"]");
+		if (foundLosDivs.length > 0) {
+			scrollTargetContents = foundLosDivs.first();
+		}
+		var hilitAnchor = scrollTargetContents.find('a:visible[name^="AnchorHit"]').first();
+		if (hilitAnchor.length > 0) {
+			that.scrollToIframeElem(hilitAnchor, callback, false);
+			return;
+		}
+		// if no highlighting: scroll to document-anchor, if set
+		var pos = getUrlParam("pos");
+		if (pos == null || pos.trim() == "") {
+			pos = getUrlParam("anchor");
+		}
+		if (pos != null && pos != "") {
+			if (iframeContents.find('a[name="' + pos + '"]').first().length > 0) {
+				that.scrollToIframeElem(iframeContents.find('a[name="' + pos + '"]').first(), callback, false);
+				return;
+			}
+		}
+		// if there is an anchor scroll to it and start with initial loading
+		// afterwards
+		that.scrollToIframeAnchor(scrollAnchor, callback, false);
+	}
+	function doAfterInitialScrolling() {
+		// after loading doc load all the other divs in viewport
+		loadDivsInViewport(function(){
+			setLOSEventHandlers();
+			$(window).trigger('LOSInitialized');
+		});
+	}
+	function setLOSEventHandlers() {
+		// register events to handle loading of divs after scrollstop and on
+		// window resize
+		scrollEventEle.on("scrollstop", {
+			latency : 250
+		}, loadDivsInViewport);
+		$(window).on("resize", function() {
+			setTimeout(function() {
+				setScaffoldEndDivHeight();
+				loadDivsInViewport();
+			}, 100);
+		});
+	}
+	// ----------------------------------------------------------------------------------------------------
+	// functions concerning content reloading
+	// ----------------------------------------------------------------------------------------------------
+	function loadDivsInViewport(callback) {
+		var divsInVP;
+		if(window !== iframeContents){
+			divsInVP = findDivsInVP($("[scrollele='true']"));
+		}else{
+			divsInVP = iframeContents.find(".loadonscroll:in-viewport:not([alreadySet='true']):not([inProgress='true'])");
+		}
+		if(divsInVP.length>0){
+			that.getLoadOnScrollContent(divsInVP[0], function(){
+				afterLoadCallback(divsInVP, callback);
+				});
+		} else {
+			callFunction(callback);
+		}
+	}
+	
+	function afterLoadCallback(divsInVP, callback){
+		if(divsInVP.length>0){
+			that.getLoadOnScrollContent(divsInVP.shift(),  function() {
+				afterLoadCallback(divsInVP, callback);
+			});
+		} else {
+			divsInVP = findDivsInVP($("[scrollele='true']"));
+			if(divsInVP.length>0){
+				that.getLoadOnScrollContent(divsInVP.shift(), function(){
+					afterLoadCallback(divsInVP, callback);
+				});
+			} else {
+				callFunction(callback);
+			}
+		}
+	}
+		
+	// load iframe-content
+	that.getLoadOnScrollContent = function(elem, callback) {
+		
+		if (elem == undefined || elem == null) {
+			elem = $(this);
+		}
+		if (elem.length < 1) {
+			callFunction(callback);
+			return;
+		}
+		// check if element is in viewport after a short time or just scrolled
+		// through, load content
+		if (elem.attr("inProgress") != "true") {
+			elem.attr("inProgress", "true");
+			loadLoadOnScrollContent(elem, callback);
+		} else {
+			callFunction(callback);
+		}
+	};
+	
+	function findDivsInVP(container){
+		var containerHeight = $(container).height();
+		var baseVP; 
+		if(container.get(0).nodeName.toUpperCase() == "IFRAME"){
+			baseVP = container.scrollTop();
+		} else {
+			baseVP = $(container).offset().top;
+		}
+		var endVP = containerHeight+baseVP;
+		var divsInVP = [];
+		$(container).find(".loadonscroll:not([alreadySet='true']):not([inProgress='true'])").each(function(){
+			var offset = $(this).offset();
+			if(offset!=undefined){
+				var upperEnd = offset.top;
+				if(upperEnd<endVP){
+					//if upperEnd above VP-bottom 
+                    if(upperEnd>baseVP){
+                    	// if upperEnd between VP-top and VP-bottom (upperEnd in Viewport)
+					   divsInVP.push($(this));
+                    } else {
+                       var lowerEnd = offset.top + $(this).height();
+                       if(lowerEnd>baseVP){
+                    	  // if upperEnd above VP-top and lowerEnd under VP-top
+                          divsInVP.push($(this));
+                       }
+                    }
+				} else {
+					return false;
+				}
+			}
+		});
+		return divsInVP;
+	}
+	
+	// load content into iframe-div
+	function loadLoadOnScrollContent(elem, callback) {
+		if (elem.attr("alreadySet") != "true") {
+			var name = $(elem).find("a[name]").attr("name");
+			if (isNullOrEmpty(name)) {
+				return;
+			}
+			var docId = name.replace("docs/", "");
+			var highlightParam = encodeURI(decodeURI(getUrlParam("highlightingTerm")));
+			if (highlightParam != null && highlightParam != "") {
+				highlightParam = "&highlightingTerm=" + highlightParam + "&highlighting=true";
+			} else {
+				highlightParam = "";
+			}
+			
+			var documentUrl;
+			if(typeof(resourceServletMapping) != "undefined" && resourceServletMapping !== "") {
+				documentUrl = contextPath + "/" + resourceServletMapping + "/" + docId + "?onlyBody=true" + highlightParam;
+			} else {
+				documentUrl = contextPath + "/docs/" + docId + "?onlyBody=true" + highlightParam;
+			}
+			
+			// get document content
+			$.ajax({
+				url : documentUrl,
+				dataType : "html",
+				contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+				data : {
+					los : "false"
+				},
+				cache: false,
+				timeout : shiR4config.losTimeOut, 
+				success : function(data, textStatus, jqXHR) {
+					// delete title
+					var losTitle = elem.find('.losTitle').text();
+					
+					if(jqXHR.getResponseHeader('keepTitle')=='true'){
+						elem.find('.losTitle').addClass('titel_ebene');
+					} else {
+						elem.find('.losTitle').remove();
+					}
+					
+					// add content
+					// fix for gmp wrong produced scaffolds (several divs with
+					// all the same doc as src: delete all but the first)
+					var losContents = elem.find('.losContent');
+					losContents.html("");
+					losContents.first().html(data);
+					// mark as already loaded
+					elem.attr("alreadySet", "true");
+					elem.attr("inProgress", "false");
+					//setIframeContentStyles();
+					var evt = new $.Event("document_loaded");
+					if((typeof(resourceServletMapping) == "undefined" || resourceServletMapping == "") && !docId.startsWith("docs/")){
+						evt.docId = "docs/"+docId;
+					}else{
+						evt.docId = docId;
+					}
+					
+					var tag = $("a[name='" + docId + "']");
+					var alias = $(tag).attr("data-alias");
+					if(isNullOrEmpty(alias)){
+						alias = $(tag).attr("alias");
+					}
+
+					var vp = scrollEle === window ? null : $(scrollEle).attr("id");
+					vp = vp || window;
+					if (typeof (vp) === "string") {
+						vp = "#" + vp;
+					} else if (vp instanceof Object) {
+						vp = "#" + $(vp).attr("id");
+					}
+					evt.viewport = typeof (vp) === "string" ? vp : "window";
+					$(window).trigger(evt);
+					callFunction(callback);
+				},
+				error : function(jqXHR, textStatus, errorThrown) {
+					if(elem.attr("tries")==null){
+						elem.attr("tries", 1);
+					} else {
+						elem.attr("tries", parseInt(elem.attr("tries"))+1);
+					}
+					if(parseInt(elem.attr("tries"))<(shiR4config.losMaxTries+1)){
+						elem.attr("inProgress", "false");
+						loadLoadOnScrollContent(elem,callback);
+					} else {
+						elem.attr("alreadySet", "true");
+						elem.attr("inProgress", "false");
+						callFunction(callback);
+					}
+				}
+			});
+		} else {
+			callFunction(callback);
+			elem.attr("inProgress", "false");
+		}
+	}
+	// ----------------------------------------------------------------------------------------------------
+	// functions concerning iframe scrolling
+	// ----------------------------------------------------------------------------------------------------
+	// scroll to iframe anchor
+	that.scrollToIframeAnchor = function(aid, callback, animate) {
+		if (animate == undefined) {
+			animate = true;
+		}
+		// url decoding, double "single slashes"
+		var anchorId = decodeURIComponent(aid).trim();
+		// get anchor-offset
+		var aTag = iframeContents.find("a[name='" + anchorId + "']").parent(".loadonscroll");
+		if (aTag.length == 0) {
+			callFunction(callback);
+			return;
+		}
+		var offset = Math.floor(aTag.offset().top+ getOffsetToAdd());
+		if (animate) {
+			scrollEle.animate({
+				scrollTop : offset
+			}, 400, callback);
+		} else {
+			scrollEle.scrollTop(offset);
+			callFunction(callback);
+		}
+	};
+
+	that.scrollToIframeElem = function(elem, callback, animate) {
+		if (animate == undefined) {
+			animate = true;
+		}
+		var offset = elem.offset().top;
+		if (animate) {
+			scrollEle.animate({
+				scrollTop : offset + getOffsetToAdd()
+			}, 200, callback);
+		} else {
+			scrollEle.scrollTop(offset + getOffsetToAdd());
+			callFunction(callback);
+		}
+	};
+	
+	/**
+	  Returns true if requested doc exists in current LOS and triggers document_load event for it.
+	*/
+	that.scrollToDocIfInCurrentLOS = function(docId, alias) {
+		if(docId == null || docId == "") {
+			docId = getDocIdFromAlias(alias);
+			
+			if((docId == null || docId == "")) {
+				return false;
+			}
+		}
+		
+		var target = $("a[name='" + docId + "'],a[data-alias='" + alias + "'],a[name='" + alias + "'],a[data-alias='" + docId + "']");
+		if (target.length > 0) {
+			var evt = new $.Event("document_load");
+			evt.docId = docId;
+			evt.alias = alias;
+			evt.scroll = true;
+			$(window).trigger(evt);
+			return true;
+		}
+		return false;
+	}
+	
+	// ----------------------------------------------------------------------------------------------------
+	// utility functions
+	// ----------------------------------------------------------------------------------------------------
+	function rgb2hex(rgb) {
+		if (rgb.search("rgb") == -1) {
+			return rgb;
+		} else {
+			rgb = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+))?\)$/);
+			function hex(x) {
+				return ("0" + parseInt(x).toString(16)).slice(-2);
+			}
+			return "#" + hex(rgb[1]) + hex(rgb[2]) + hex(rgb[3]);
+		}
+	}
+
+	function callFunction(func) {
+		if (typeof (func) == "function") {
+			func();
+		}
+	}
+
+}

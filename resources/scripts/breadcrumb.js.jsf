@@ -1,0 +1,94 @@
+(function() {
+	var container = "breadcrumbContainer";
+	var innerContainer = "breadcrumbInnerContainer";
+	var cloneContainer = "breadcrumbInnerContainerClone";
+	var saveContainer = "breadcrumbInnerContainerSave";
+
+	var init = false;
+	
+	$(window).on('resize', function() {
+		adjustBreadcrumb(true);
+	});
+	
+	$(document).ready(function() {
+	  $(window).on('update.pointer', function() {
+	    init = false;
+	    adjustBreadcrumb(true);
+	  });
+	});
+	
+	
+	function checkBreadcrumbChange() {
+		return $("#" + innerContainer + " span").last().text() != $("#" + cloneContainer + " span").last().text();
+	}
+	
+	function adjustBreadcrumb(fromResize) {
+		//init the save container to always get the non shortened breadcrumbs
+		if(checkBreadcrumbChange() || !init) {
+			$("#" + saveContainer).remove();
+			var c = $("#" + innerContainer).clone();
+			c.prop("id", saveContainer);
+			$("#" + container).append(c);
+			init = true;
+		}
+		if (checkBreadcrumbChange() || fromResize) {
+			//get breadcrumbs
+			var crumbsToAdjust = $("#" + innerContainer).find(".breadCrumb");
+			
+			var allCrumbsCount = crumbsToAdjust.length;
+	
+			//get the usableWidth
+			var usableWidth = $("#" + cloneContainer).width() - 50;
+			usableWidth = usableWidth - ((allCrumbsCount - 1) * 10 + 60);
+			
+			//get the neededWidth
+			var crumbsToGetWidthAdjust = $("#" + saveContainer).find(".breadCrumb");
+			var neededWidth = 0;
+			for(i = 0; i < crumbsToGetWidthAdjust.length; i++) {
+				neededWidth += $(crumbsToGetWidthAdjust[i]).outerWidth();
+			}
+			
+			
+			//check for every crumb if it fits after being shortened
+			for (i = 0; i < crumbsToAdjust.length; i++) {
+				if (neededWidth > usableWidth) {
+					neededWidth -= $(crumbsToGetWidthAdjust[i]).outerWidth();
+					var t = $(crumbsToAdjust[i]).text();
+					$(crumbsToAdjust[i]).text(trunc(t));
+					neededWidth += $(crumbsToAdjust[i]).outerWidth();
+				} else {
+					break;
+				}
+			}
+			
+			//shorten even more if first loop wasnt enough
+			for (i = 0; i < crumbsToAdjust.length; i++) {
+				if (neededWidth > usableWidth) {
+					neededWidth -= $(crumbsToAdjust[i]).outerWidth();
+					var t = $(crumbsToAdjust[i]).text("...");
+					neededWidth += $(crumbsToAdjust[i]).outerWidth();
+				} else {
+					break;
+				}
+			}
+			
+			//replace the breadcrumb bar with shortened one
+			$("#" + cloneContainer).empty();
+			$("#" + cloneContainer).append($("#"+ innerContainer).html());
+			//reset the container on which shortening is done
+			$("#" + innerContainer).empty();
+			$("#" + innerContainer).append($("#" + saveContainer).html());
+		}
+		$('#breadcrumbInnerContainer a, #breadcrumbInnerContainerSave a').each(function(index, element){
+			$(element).attr('tabindex', '-1');
+		});
+		$('#breadcrumbInnerContainerClone a').each(function(index, element){
+			$(element).attr('tabindex', '0');
+		});
+	}
+	
+	function trunc(text) {
+		return (text.length > 30) ? (text.substr(0,25)+"...") : text;
+	}
+
+})();

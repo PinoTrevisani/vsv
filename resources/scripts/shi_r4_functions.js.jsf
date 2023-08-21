@@ -1,0 +1,1101 @@
+var shiR4config = new ShiR4Config();
+
+if (typeof String.prototype.startsWith != 'function') {
+	String.prototype.startsWith = function(prefix) {
+		return this.slice(0, prefix.length) == prefix;
+	};
+}
+if(typeof String.prototype.endsWith != 'function'){
+	String.prototype.endsWith = function(suffix) {
+	    return this.indexOf(suffix, this.length - suffix.length) !== -1;
+	};
+}
+
+if(typeof Date.prototype.timeNow != "function"){
+	Date.prototype.timeNow = function () {
+		// return HH:mm:ss.SSS
+	    return ((this.getHours() < 10)?"0":"") + this.getHours() +":"+ ((this.getMinutes() < 10)?"0":"") + this.getMinutes() +":"+ ((this.getSeconds() < 10)?"0":"") + this.getSeconds()+ "."+ ((this.getMilliseconds() < 100)?"0":((this.getMilliseconds() < 10)?"00":"")) + this.getMilliseconds();
+	}
+}
+
+$(document).ready(function() {
+	windowSizeChange();
+	
+	$("#loginMask").hide();
+	$("#loginLink").click(function() {
+		$("#loginMask").fadeToggle();
+		$("#loginMessage").html("");
+		return false;
+	});
+
+	$("#accordionWidth").width($("#outlook").width());
+
+	$("#outlook").resize(function() {
+		$("#accordionWidth").val($("#outlook").width());
+		$("#outlookPanel").width($("#outlook").width());
+	});
+
+	$("#notesEdit").hide();
+	$(".noteLink").click(function() {
+
+		if ($("#notesEdit").css('display') === 'none') {
+			$("#notesEdit").fadeToggle();
+
+		}
+
+		return false;
+	});
+
+	$(".submitLinkForm").keyup(function(event) {
+		if (event.keyCode == 13) {
+			$(event.target).closest(".submitLinkForm").find(".submitLink").trigger('click');
+		}
+	});
+
+	$('.browserBack').click(function() {
+		window.history.go(-1);
+	});
+
+	resizeSidebarItems();
+
+	$(".tabList").click(function() {
+		var tabs = $(".tabs").children();
+		var content = $(".tabs").siblings().children();
+		var clicked = $(this);
+		var classes = clicked.attr('class').split(/\s+/);
+
+		if ($(clicked).hasClass("selectedTab")) {
+			return;
+		}
+
+		tabs.each(function() {
+			if ($(this).hasClass("selectedTab")) {
+				$(this).removeClass("selectedTab").addClass("unselectedTab");
+			}
+			;
+		});
+
+		$(clicked).removeClass("unselectedTab").addClass("selectedTab");
+
+		content.each(function() {
+			// delete old error messages
+			$(this).find('.msgField').html('');
+
+			if ($(this).hasClass("selectedContent")) {
+				$(this).removeClass("selectedContent").addClass("unselectedContent");
+			}
+			;
+			for (var i = 0; i < classes.length; i++) {
+				if ($(this).hasClass(classes[i])) {
+					$(this).removeClass("unselectedContent").addClass("selectedContent");
+				}
+			}
+		});
+	});
+
+	// If an event gets to the body
+	$("body").click(function() {
+		closePopup();
+	});
+
+	// Prevent events from getting pass .popup
+	$("#centeredNotes").click(function(e) {
+		e.stopPropagation();
+	});
+	
+	doScrollings();
+	
+	$(".searchInput").keydown(function (event) {
+		var keyCode = ('which' in event) ? event.which : event.keyCode;
+		if(keyCode==13){
+			$(event.target).closest("form").submit();
+			event.preventDefault();
+		}
+	});
+});
+// $(document).ready(highlight.initNavigation);
+
+function doScrollings() {
+	
+
+	// scroll to current tree entry
+	scollToCurrentNode();
+	
+	var hitAnchors = $("[href*=AnchorHit]");
+	if(hitAnchors.length>0){
+		$(hitAnchors).each(function(k,v){
+			$(v).on("click",function(e){
+				e.preventDefault();
+				var aname = $(v).attr("href").substring(1);
+				var target = $("[name="+aname+"]");
+				if(0<$(target).length){
+					var offset = $(target).offset().top;
+					if(typeof scrollInstance != 'undefined' && scrollInstance!=null && scrollInstance instanceof SmartScroll){
+						var elements = scrollInstance.allTopFixedBefore(scrollInstance.elements.length,null);
+						for(var idx=0;idx<elements.length;idx++){
+							offset-= elements[idx].height;
+						}
+					}
+					if(target.parents(".scrollable").length>0){
+						var parent = target.parents(".scrollable").first();
+						$(parent).scrollTop(target.position().top + $(parent).scrollTop());
+					} else {
+						$(document).scrollTop(offset);
+					}
+				}
+			})
+		});
+	}
+}
+
+function scollToCurrentNode(){
+	// scroll to current tree entry
+	var treeNodeAnchor = $("#currentTreeNode").first();
+	if (treeNodeAnchor.length) {
+		var scrollDiv = treeNodeAnchor.closest(".tBodyDiv");
+		if(scrollDiv.length) {
+			var halfHeight = scrollDiv.height() / 2;
+			var pos = treeNodeAnchor.offset().top - scrollDiv.offset().top - halfHeight;
+			scrollDiv.scrollTop(pos);
+		}
+	}
+}
+
+function openChangePasswordWindow(user, werk) {
+	var method = 'POST';
+	var url = 'http://www.shi-gmbh.com';
+
+	openPostWindow(method, url, {
+		command : 'pw_aendern',
+		RET_EMAIL : user,
+		RET_WERK : werk
+	}, '_blank', true);
+}
+
+function openPostWindow(method, url, data, target, popup) {
+	var form = document.createElement("form");
+	form.method = method;
+	form.action = url;
+	form.target = target || "_self";
+
+	if (data) {
+		for ( var key in data) {
+			var input = document.createElement("textarea");
+			input.name = key;
+			input.value = typeof data[key] === "object" ? JSON.stringify(data[key]) : data[key];
+			form.appendChild(input);
+		}
+	}
+
+	form.style.display = 'none';
+
+	// change submit to popup window
+	if (popup) {
+		var w = window.open('about:blank', 'changePwPopup',
+				'toolbar=0,scrollbars=0,location=0,statusbar=0,menubar=0,resizable=0,width=400,height=400,top=100,left=100');
+		form.target = 'changePwPopup';
+	}
+
+	document.body.appendChild(form);
+
+	form.submit();
+};
+
+/**
+ * get url parameter by name
+ */
+function getUrlParam(sParam, win) {
+
+	if (sParam == undefined || sParam == null || sParam == "") {
+		return "";
+	}
+
+	if (win == null || win == undefined) {
+		win = window;
+	}
+
+	if (typeof (paramModel) != "undefined") {
+		var value = paramModel[sParam];
+		if (value != null && value != undefined) {
+			return value;
+		}
+	}
+
+	var sPageURL = win.location.search.substring(1);
+	var sURLVariables = sPageURL.split('&');
+	for (var i = 0; i < sURLVariables.length; i++) {
+		var sParameterName = sURLVariables[i].split('=');
+		if (sParameterName[0] == sParam) {
+			return sParameterName[1];
+		}
+	}
+
+	return "";
+}
+
+/**
+ * get the document situated in the tree before the current document
+ */
+function getPrevTreeDoc() {
+	var id = decodeURIComponent(getUrlParam("docId"));
+	var alias = getUrlParam("alias");
+	$.ajax({
+		url : contextPath + "/treeDoc",
+		type : "POST",
+		dataType : "json",
+		contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+		async : false,
+		data : {
+			method : "prevTreeDoc",
+			event : "navigation",
+			id : id,
+			alias : alias
+		},
+		success : function(data, textStatus, jqXHR) {
+			if (data.nextDocId != null && data.nextDocId != "") {
+				var documentActionOutcome = "?faces-redirect=true&event=navigation&docId=" + data.nextDocId + "&alias=" + data.alias + "&anchor=" + data.anchor;
+				window.location.href = location.protocol + '//' + location.host + location.pathname + documentActionOutcome;
+			}
+		},
+		error : function(jqXHR, textStatus, errorThrown) {
+		}
+	});
+}
+
+/**
+ * get the document situated in the tree after the current document
+ */
+function getNextTreeDoc() {
+	var id = decodeURIComponent(getUrlParam("docId"));
+	var alias = getUrlParam("alias");
+	$.ajax({
+		url : contextPath + "/treeDoc",
+		type : "POST",
+		dataType : "json",
+		contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+		async : false,
+		data : {
+			method : "nextTreeDoc",
+			event : "navigation",
+			id : id,
+			alias : alias
+		},
+		success : function(data, textStatus, jqXHR) {
+			if (data.nextDocId != null && data.nextDocId != "") {
+				var documentActionOutcome = "?faces-redirect=true&event=navigation&docId=" + data.nextDocId + "&alias=" + data.alias + "&anchor=" + data.anchor;
+				window.location.href = location.protocol + '//' + location.host + location.pathname + documentActionOutcome;
+			}
+		},
+		error : function(jqXHR, textStatus, errorThrown) {
+		}
+	});
+}
+
+/*
+ * Validates if a input text element contains some value
+ */
+function fastSearchValidation(validationMessage) {
+
+	// Resetting all the fields
+	var titelValidation = $('#titelValidation');
+	titelValidation.text('');
+
+	var beitraegeValidation = $('#beitraegeValidation');
+	beitraegeValidation.text('');
+
+	var arbeitshilfenValidation = $('#arbeitshilfenValidation');
+	arbeitshilfenValidation.text('');
+
+	var grafikValidation = $('#grafikValidation');
+	grafikValidation.text('');
+
+	var fastSearchValidation = $('#fastSearchValidation');
+
+	fastSearchValidation.text('');
+
+	if (document.getElementById('searchInputText').value.trim()) {
+		return true;
+	} else {
+		fastSearchValidation.text(validationMessage);
+	}
+
+	return false;
+
+}
+
+/**
+ * Initializes all the validation span tags to empty. This function is called
+ * when the user clicks the reset button in the extended search form.
+ * 
+ */
+function resetValidations() {
+
+	var titelValidation = $('#titelValidation');
+	titelValidation.text('');
+
+	var beitraegeValidation = $('#beitraegeValidation');
+	beitraegeValidation.text('');
+
+	var arbeitshilfenValidation = $('#arbeitshilfenValidation');
+	arbeitshilfenValidation.text('');
+
+	var grafikValidation = $('#grafikValidation');
+	grafikValidation.text('');
+
+	var generalValidation = $('#generalValidation');
+	generalValidation.text('');
+}
+
+function windowSizeChange() {
+	$(window).resize(function() {
+		setTimeout(function() {
+			breadcrumbResize();
+		}, 5);
+	}).resize();
+}
+
+function placeHolderScrollbar() {
+	if (($(document).height()) == $(window).height()) {
+		$("#page").css({
+			"marginRight" : "42px"
+		});
+		$("#loginMask").css({
+			"right" : "63px"
+		});
+		$("#loginMessage").css({
+			"right" : "63px"
+		});
+	} else {
+		$("#page").css({
+			"marginRight" : "25px"
+		});
+		$("#loginMask").css({
+			"right" : "46px"
+		});
+		$("#loginMessage").css({
+			"right" : "46px"
+		});
+	}
+}
+
+function editNote(element, id, author, title, content, saveDate, origTitle, alias, anchor) {
+	$('#notes_form tr').css('background-color', '#FFFFFF');
+	$(element).closest('tr').css('background-color', '#F0F7FD');
+
+	$('#noteCreationDate').text("Erstellt am: " + saveDate);
+	$('#noteToDocLink').attr('href', 'document.jsf?docId=' + id + '&alias=' + alias + "&activeToolbarTab=document&event=navigation");
+
+	$('#docId').val(id);
+	$('#note_author').val(author);
+	$('#note_title').val(title);
+	$('#noteId').val(id + '|' + alias + '|' + anchor);
+	$('#anchor').val(anchor);
+	$('#note_title').attr('placeholder', origTitle);
+	$('#note_content').val(content);
+	$('#note_alias').val(alias);
+	$(window).trigger("resize");
+}
+
+function emptyNoteFields() {
+	$('#note_content').val('');
+	$('#docId').val('');
+	$('#note_author').val('');
+	$('#note_title').val('');
+	$('#note_title').attr('placeholder', '');
+	location.reload();
+}
+
+function closePopup() {
+	$("#notesEdit").hide();
+
+}
+
+function portletKlick(element, toggleable) {
+	var content = $(element).parent().parent().siblings();
+	if (toggleable) {
+		$(content).toggle();
+		if ($(content).hasClass('itemClosed')) {
+			$(content).removeClass('itemClosed').css('display', 'block');
+		} else {
+			$(content).addClass('itemClosed');
+		}
+		resizeSidebarItems();
+	}
+	return false;
+}
+
+function resizeSidebarItems() {
+
+	var closedBarHeight = 0;
+	var sidebars = $('#portletPanel').find('.singlePanel');
+	if (sidebars.length == 0)
+		return;
+
+	var sidebarsNotToResize = $('.itemClosed');
+
+	$.each(sidebarsNotToResize, function(intIndex, objValue) {
+		var headerHeight = $(this).siblings().outerHeight();
+		$(objValue).parent().parent().css('height', headerHeight);
+		$(objValue).css({
+			'display' : 'none'
+		});
+		$(objValue).siblings().find('#openCloseIcon').removeClass('.ui-icon ui-icon-minusthick');
+		$(objValue).siblings().find('#openCloseIcon').addClass('.ui-icon ui-icon-plusthick');
+	});
+
+	var sidebarsToResize = [];
+
+	sidebars.each(function() {
+		if ($(this).find('.itemClosed').length > 0) {
+			closedBarHeight = closedBarHeight + $(this).find('.portletHeader').outerHeight() + parseInt($(this).css('margin-bottom'), 10)
+					- parseInt($(this).css('border-bottom-width'), 10) - parseInt($(this).css('border-top-width'), 10);
+		} else if ($(this).find('.portletContent[style="display:block;"], .portletContent[style="display: block;"]').length > 0) {
+			sidebarsToResize.push($(this));
+		}
+	});
+	if (closedBarHeight != 0) {
+		closedBarHeight = closedBarHeight / sidebarsToResize.length;
+	}
+
+	if (sidebarsToResize.length == 0)
+		return;
+
+	closedBarHeight += parseInt($(sidebars[0]).css('margin-bottom'), 10) - parseInt($(sidebars[0]).css('border-bottom-width'), 10)
+			- parseInt($(sidebars[0]).css('border-top-width'), 10);
+	var elementHeight = 100 / sidebarsToResize.length + "% - " + closedBarHeight + "px";
+	$.each(sidebarsToResize, function(intIndex, objValue) {
+		$(objValue).css('height', 'calc(' + elementHeight + ')');
+		$(objValue).find('#openCloseIcon').removeClass('.ui-icon ui-icon-plusthick');
+		$(objValue).find('#openCloseIcon').addClass('.ui-icon ui-icon-minusthick');
+	});
+	
+	if(typeof(setAllSizesPortlets) == "function") {
+		setAllSizesPortlets(sidebarsToResize.length);
+	}
+}
+
+function breadcrumbResize() {
+	if ($("#contentBodyData").find("#frame2").length != 0) {
+		var breadcrumbChildren = $("#breadcrumbDiv a");
+		// add the breadcrumb only if there is something to add
+		if (breadcrumbChildren.length !== 0) {
+			var breadCrumbDiv = $("#breadcrumbDiv");
+			breadCrumbDiv.css({
+				'display' : 'block'
+			});
+			breadCrumbDiv.width((document.getElementById('documentContent').clientWidth + 1.7));
+		}
+	}
+}
+
+function toggleResponsivePortlet() {
+	$("#page #portlets").toggle();
+	if ($("#openCloseResponsive").hasClass(('ui-icon-plusthick'))) {
+		$('#openCloseResponsive').removeClass('.ui-icon ui-icon-plusthick');
+		$('#openCloseResponsive').addClass('.ui-icon ui-icon-minusthick');
+	} else {
+		$('#openCloseResponsive').removeClass('.ui-icon ui-icon-minusthick');
+		$('#openCloseResponsive').addClass('.ui-icon ui-icon-plusthick');
+	}
+	return false;
+}
+
+function toggleFlyout(flyout) {
+	var affectedFlyout;
+	
+	if (flyout == 'extendedSearch') {
+		affectedFlyout = $('#extendedSearchFlyout');
+	}
+	if (flyout == 'impressum') {
+		affectedFlyout = $('#impressumFlyout');
+	}
+	if (flyout == 'support') {
+		affectedFlyout = $('#supportFlyout');
+	}
+
+	$(".flyoutCover").remove();
+	affectedFlyout.css("z-index", "1");
+	affectedFlyout.after("<iframe src='about:blank' class='flyoutCover' style='display:none;'>");
+	var flyoutCoverResize = function(flyout) {
+	    $(".flyoutCover").css({
+	        'position': 'absolute',
+	        'border': 'none',
+	        'left': flyout.offset().left,
+        	'top': flyout.offset().top,
+	    	'width': flyout.outerWidth(),
+	    	'height': flyout.outerHeight(),
+	        'z-index': 0,
+	        'display': ''
+	    });
+	};
+    
+	if ($(affectedFlyout).css('display') == 'none') {
+		$(".flyout").hide(1000);
+		$(affectedFlyout).show(1000, function(){flyoutCoverResize(affectedFlyout);});
+	} else {
+		$(affectedFlyout).hide(1000, function(){$(".flyoutCover").remove();});
+	}
+}
+
+function toggleElement(element) {
+	var toToggle = '';
+	if (element == 'outlook') {
+		toToggle = $('#');
+	}
+}
+
+function printDocument() {
+	var possibleIframes = [ "frame1", "frame2", "frame3" ];
+	for (var i = 0; i < possibleIframes.length; i++) {
+		var frame = window.frames[possibleIframes[i]];
+		if (frame != undefined) {
+			frame.focus();
+			try {
+				frame.contentWindow.print();
+			} catch (e) {
+				frame.print();
+			}
+
+			break;
+		}
+	}
+}
+
+function togglePortletPanel() {
+	if ($('#portlets').css('display') == 'none') {
+		$('#portlets').effect('blind', {
+			direction : 'left',
+			mode : 'show'
+		}, 1000);
+		$('#portletToggleWrapper').switchClass("collapsedPortlet", "expandedPortlet", 1000);
+		$('#portletToggle').text("Verkleinern >>");
+		document.cookie = "portlets=expanded";
+
+	} else {
+		$('#portlets').effect('blind', {
+			direction : 'left',
+			mode : 'hide'
+		}, 1000);
+		$('#portletToggleWrapper').switchClass("expandedPortlet", "collapsedPortlet", 1000);
+		$('#portletToggle').text("<< Vergrößern");
+		document.cookie = "portlets=collapsed";
+	}
+
+}
+
+function getCookie(cname) {
+	var name = cname + "=";
+	var ca = document.cookie.split(';');
+	for (var i = 0; i < ca.length; i++) {
+		var c = ca[i];
+		while (c.charAt(0) == ' ') {
+			c = c.substring(1);
+		}
+		if (c.indexOf(name) == 0) {
+			return c.substring(name.length, c.length);
+	}
+	}
+	return "";
+}
+
+function setCookie(cname, cvalue, exdays) {
+	var d = new Date();
+	d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
+	var expires = "expires=" + d.toUTCString();
+	document.cookie = cname + "=" + cvalue + "; " + expires;
+}
+
+var extendedSearchValue = "";
+/**
+ * This array stores the selected keywords used in the extended search.
+ */
+var selectedKeywords = new Array();
+var isExtSearchHintDisplayed = false;
+var isExtSearchMaxSelectedMessageDisplayed = false;
+function updateElement(element) {
+	selectedKeywords = $("select#" + shiR4config.extendedSearchKeywordsId).val();
+	extendedSearchValue = element.value;
+	if (selectedKeywords != null) {
+		updateKeywords([ {
+			name : 'inputTerm',
+			value : extendedSearchValue
+		}, {
+			name : 'keywords',
+			value : selectedKeywords.join('###')
+		} ]);
+	} else {
+		updateKeywords([ {
+			name : 'inputTerm',
+			value : extendedSearchValue
+		} ]);
+	}
+}
+function selectKeywords() {
+	var selectElement = $("select#" + shiR4config.extendedSearchKeywordsId);
+	if (selectElement.has("option").length > 0) {
+		if (isExtSearchHintDisplayed) {
+			$("span." + shiR4config.extendedSearchNoHitsWarningClass).remove();
+			isExtSearchHintDisplayed = false;
+		}
+		if (selectedKeywords != null && selectedKeywords.length > 0) {
+			selectElement.val(selectedKeywords);
+		}
+	} else {
+		if (!isExtSearchHintDisplayed) {
+			$("input#" + shiR4config.extendedSearchInputId).after(shiR4config.extendedSearchNoHitsWarning);
+			isExtSearchHintDisplayed = true;
+		}
+	}
+}
+function selectKeywordsAfterEvent(data) {
+	if (data.status == "success") {
+		selectKeywords();
+	}
+}
+function removeSelection(selectId) {
+	$("#" + selectId).val("");
+	updateKeywords([ {
+		name : 'inputTerm',
+		value : $("input#" + shiR4config.extendedSearchInputId).val()
+	}, {
+		name : 'keywords',
+		value : ''
+	} ]);
+	selectedKeywords = new Array();
+}
+/**
+ * Ensures that the selected keywords count in the extended search does not
+ * exceed the configured limit. Shows configured message to the user underneath
+ * the input field if more keywords were selected and users selection was hence
+ * modified.
+ * 
+ * This function is intended to be called by the "change" event of the
+ * multiselect. The event object is not used because it contains only the last
+ * keyword rather than all keywords involved in the selection which triggered
+ * the event.
+ */
+function updateExtendedSearchSelect() {
+	
+	if(shiR4config.extendedSearchMaxSelected < 0) {
+		return;
+	}
+	
+	// Get the keywords which where selected as the event was fired.
+	var nowSelectedKeywords = $("select#" + shiR4config.extendedSearchKeywordsId).val();
+
+	if (nowSelectedKeywords.length > shiR4config.extendedSearchMaxSelected) {
+		// Show configured message if it is not already displayed.
+		// The message will fade out after 10 seconds.
+		// The span will be removed from DOM after 12 seconds.
+		if (!isExtSearchMaxSelectedMessageDisplayed) {
+			$("input#" + shiR4config.extendedSearchInputId).after(shiR4config.extendedSearchMaxSelectedMessage);
+			$("span." + shiR4config.extendedSearchMaxSelectedMessageClass).delay(10000).fadeOut(1000);
+			setTimeout(function() {
+				$("span." + shiR4config.extendedSearchMaxSelectedMessageClass).remove();
+				isExtSearchMaxSelectedMessageDisplayed = false;
+			}, 12000);
+			isExtSearchMaxSelectedMessageDisplayed = true;
+		}
+
+		if (selectedKeywords == null) {
+			selectedKeywords = new Array();
+		}
+
+		// Determine which keywords are new. The event contains only the last
+		// selected keyword.
+		// Search therefor for keywords which are in nowSelectedKeywords but not
+		// in the stored
+		// selectedKeywords and push them to newlySelectedKeywords.
+		var newlySelectedKeywords = new Array();
+		$.grep(nowSelectedKeywords, function(element) {
+			if ($.inArray(element, selectedKeywords) == -1)
+				newlySelectedKeywords.push(element);
+		});
+
+		// Append the newly selected to the previosly selected keywords until
+		// the configured limit is reached.
+		newlySelectedKeywords.forEach(function(element) {
+			if (selectedKeywords.length < shiR4config.extendedSearchMaxSelected) {
+				selectedKeywords.push(element);
+			}
+		});
+
+		// Set the new keywords set which obeys the count restriction.
+		$("select#" + shiR4config.extendedSearchKeywordsId).val(selectedKeywords);
+	} else {
+		// Update the stored keywords for later use.
+		selectedKeywords = nowSelectedKeywords;
+	}
+}
+
+function submitByEnter(event, buttonId) {
+	if (typeof (event.keyCode) !== "undefined" && event.keyCode == 13) {
+		event.returnValue = false;
+		event.cancel = true;
+    var leftMouseUpEvent = jQuery.Event('mouseup');
+    leftMouseUpEvent.which = 1;
+		$("#" + buttonId).trigger(leftMouseUpEvent);
+    var leftClickEvent = jQuery.Event('click');
+    leftClickEvent.which = 1;
+    $("#" + buttonId).trigger(leftClickEvent);
+		event.preventDefault();
+		event.stopPropagation();
+		return false;
+	}
+	
+	return true;
+}
+
+/**
+ * returns true if given val is: * null * "" * or undefined else false if trim
+ * is true, the val will trim
+ * 
+ * @param val
+ * @param trim
+ *            default false
+ */
+function isNullOrEmpty(val, trim) {
+	if (val == undefined) {
+		return true;
+	}
+	if (undefined == trim)
+		trim = false;
+	if (trim) {
+		val = val.trim();// trim is sinve js version 1.8!
+	}
+	if ("" === val) {
+		return true;
+	}
+	return false;
+}
+
+function trim(stringToTrim) {
+	return stringToTrim.replace(/^\s+|\s+$/g,"");
+}
+
+function showWaitDialogue() {
+	$('#print_in_progess').css({
+		'display' : 'block'
+	});
+	$('#printForm').children().each(function() {
+		$(this).addClass("inProgress");
+	});
+}
+
+function hideWaitDialogue() {
+	$('#print_in_progess').css({
+		'display' : 'none'
+	});
+	$('#printForm').children().each(function() {
+		$(this).removeClass("inProgress");
+	});
+}
+
+function escapeId(id) {
+	return id.replace(/(-|:|\.|\[|\]|,)/g, "\\$1");
+}
+
+function removeparams(sUrl)
+{
+    var iPR = sUrl.indexOf('#');
+    var iPQ = sUrl.indexOf('?');
+    var iP = (iPR < 1) ? iPQ : iPR;
+    if (iPQ > -1 && iPQ < iPR)
+        iP = iPQ;
+    if (iP < 0)  return sUrl;
+    return sUrl.substring(0, iP);
+}
+
+
+/**
+ * findClassDiffer is used to calculate bootstrapcols in Treetemplates
+ * it takes the diff="" Attribute and calc [number bootstrapcols] - diff
+ * then it go to class-attribute and replace diff with the calculate number
+ * IT IS A WORKAROUND for the Tree Template mechanism
+ */
+function findClassDiffer() {
+	/*$(".col-xs-DIFF").each(function(k, v) {
+		var diff = $(v).attr("diff");
+		var arg = eval(diff);
+		setCalculatedClass($(v), arg);
+	});*/
+}
+
+function setCalculatedClass(element, diff) {
+	var cls = $(element).attr("class").replace("DIFF", shiR4config.bootstrapCols - diff);
+	$(element).attr("class", cls);
+}
+
+function showAllFootNotes(className){
+	if(className==null){
+		className=".fnid";
+	}
+	if(!className.startsWith(".")){
+		className="."+className;
+	}
+	$(className).each(function(k,v){
+		toggleFootNote(v, true);
+	});
+}
+
+/**
+ * 
+ * method to toggle footnotes 
+ * additional display parameter shows the element on true or hides it on false
+ * 
+ * @param elem
+ * @param display
+ * @returns
+ */
+function toggleFootNote(elem, display){
+	var href = $(elem).attr("href");
+	var fnTitle;
+	var textNode = document.querySelector(href + " > td[class='fntext']");
+	if (isNullOrEmpty(textNode) === false) {
+		fnTitle = textNode.innerHTML;
+	} else {
+		fnTitle = $(elem).attr("title");
+	}
+	if (isNullOrEmpty(fnTitle) === true) {
+		if ($(elem).find("[title]").length === 0) {
+			return;
+		}
+		toggleFootNote($(elem).find("[title]").first());
+	}
+	
+	
+	if ($(elem).parent().find(".fn-box").length > 0) {
+		if (display === true) {
+			$(elem).parent().find(".fn-box").text(fnTitle);
+		} else {
+			$(elem).parent().find(".fn-box").remove();
+		}
+	} else {
+		$(elem).parent().append("<div class=\"fn-box\">"+fnTitle+"</div>");
+	}
+}
+
+function insertMoreTab($container, childSelector){
+	//reset the moreTab
+	$container.find(".moreTab").replaceWith($container.find(".moreTab").find(childSelector));
+	
+	var tabs = $container.children();
+	var containerWidth = $container.width();	
+	var moreTabWidth = getMoreTabWidth($container[0]);
+	var usableWidth = containerWidth - moreTabWidth - 5; // safety pixels for rounding
+	var usedWidth = 0;
+	var i = 0;
+	var dropdownTabs = $container.children();
+	for(i; i<tabs.length;i++){
+		usedWidth += $(tabs[i]).outerWidth();
+		if(usedWidth<usableWidth){
+			dropdownTabs = dropdownTabs.not(tabs[i]);
+		}
+	}
+
+	dropdownTabs = dropdownTabs.wrap("<li></li>");
+	
+	$container.find("li").wrapAll("<ul class='dropdown-menu' aria-labelledby='dropdownMenu1' lang='de' style='overflow-y:auto;'></ul>");
+	$container.find("ul").before("<button class='dropdown-toggle btn' type='button' id='dropdownMenu1' data-toggle='dropdown' aria-haspopup='true' aria-expanded='true'>Mehr</button>");
+	$container.find("ul,button").wrapAll("<div class='dropdown moreTab'></div>");
+
+	//$(".toolbarButtons").find(".dropdown-menu").css("max-height", dropdownHeight + 'px');
+}
+
+var cachedMoreTabWidth = -1;
+
+function getMoreTabWidth(tabbar){
+	if(cachedMoreTabWidth!=-1){
+		return cachedMoreTabWidth;
+	}
+	var toolbar_sub = document.createElement("DIV");
+	toolbar_sub.className = "toolbar";
+	
+	var moreTab_sub = document.createElement("DIV");
+	moreTab_sub.className = "dropdown moreTab";
+
+	var moreTab_button_sub = document.createElement("BUTTON");
+	moreTab_button_sub.className = "dropdown-toggle btn";
+	
+	var text = document.createTextNode("Mehr");
+	
+	moreTab_button_sub.appendChild(text);
+	
+	moreTab_sub.appendChild(moreTab_button_sub);
+	
+	toolbar_sub.appendChild(moreTab_sub);
+	
+	tabbar.appendChild(moreTab_sub);
+	
+	var moreTabWidth = ($(moreTab_sub).outerWidth());
+	tabbar.removeChild(moreTab_sub);
+	
+	cachedMoreTabWidth = moreTabWidth;
+	
+	return moreTabWidth;
+
+}
+
+var printer = {
+		checkAllTitles:function(){
+			this.lastTitle=null;
+			var that = this;
+			$(shiR4config.printer_titleCls).each(function(k,v){
+				that.checkTitle(v);
+			});
+		},
+		checkTitle:function(node){
+			var title = $(node).text();
+			if(title===this.lastTitle){
+				$(node).hide();
+		    }
+			this.lastTitle=title;
+		}
+};
+
+
+var highlight = {
+	initNavigation: function(){
+		if(!shiR4config.highlight.loopHighlighting){
+			// reset visibility
+			$(".hlPrev,.hlNext").show();
+			// hide first link to previous
+			$(".hlPrev").first().hide();
+			// hide last link to next
+			$(".hlNext").last().hide();
+		}
+	},
+	toNextHighlight: function(event, ele){
+		highlight._scrollToRelativeHLNavigation(ele,1);
+	},
+	toPreviousHighlight: function(event, ele){
+		highlight._scrollToRelativeHLNavigation(ele,-1);
+	},
+	/**
+	 * relativeTo: navigation-Element you should start from (origin)
+	 * offset: 
+	 * 	- negative value: scroll to the HL-navigation that is x indexes before the origin-element
+	 * 	- positive value: scroll to the HL-navigation that is x indexes after the origin-element
+	 */
+	_scrollToRelativeHLNavigation: function(relativeTo, offset){
+		var allNavigations = $(".hlNext:visible,.hlPrev:visible");
+		var targetIndex = allNavigations.index( $(relativeTo) ) + offset;
+		if(targetIndex>=allNavigations.length){
+			targetIndex = 0;
+		}
+		if(targetIndex<0){
+			targetIndex = allNavigations.length-1;
+		}
+		var target = allNavigations.eq(targetIndex);
+		if(target){
+			highlight.util.scrollToEle(target);
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	},
+	
+	scrollToTargetHighlight: function(ele){
+		var target = $($(ele).attr("data-href"));
+		highlight.util.scrollToEle(target);
+	},
+	
+	util: {
+		scrollToEle: function(target){
+			var scrollParent = $(target).scrollParent();
+			var globalPositionTarget = $(target).offset().top;
+			var globalPositionScrollParent = scrollParent.offset().top;
+			var positionTargetInScrollParent = globalPositionTarget - globalPositionScrollParent;
+			var scrollOffset = scrollParent.scrollTop();
+			scrollParent.scrollTop(positionTargetInScrollParent + scrollOffset);
+		}
+	}
+};
+
+/**
+ * utility to replace term with value in string
+ * @param str
+ * @param term
+ * @param value
+ * @returns
+ */
+function replaceTerm(str,term,value){
+	if(str.indexOf(term)>-1){
+		var start = str.indexOf(term);
+		var end = str.indexOf("&",start+1);
+		var buffer = str.substring(0,start);
+		buffer+=term+"="+value;
+		buffer += str.substring(end);
+		return buffer;
+	}
+	return str;
+}
+
+/**
+ * build camelCase of a dash separated string
+ * @param nonCamel
+ * @returns
+ */
+function buildCamelCase(nonCamel) {
+	var camel = nonCamel;// fallback
+	var parts = nonCamel.split("-");
+	if (parts.length == 2) {
+		var letter = parts[1].substring(0, 1).toUpperCase();
+		camel = parts[0] + letter + parts[1].substring(1);
+	}
+	return camel;
+}
+
+function getCustomOffset(viewport,pointer){
+	var offset = 0;
+	if (shiR4config.customLosOffset != null) {
+		if(shiR4config.customLosOffsetUnit === "%"){
+			if ( viewport.length > 0 ) {
+				offset = Math.ceil($(viewport).outerHeight(true) / 100 * Math.abs(shiR4config.customLosOffset));
+			}
+		}else if(pointer != null){
+			offset = Math.abs(shiR4config.customLosOffset)
+			+ (Math.max($(pointer).height(),1)) / 3;
+		} else {
+			offset = Math.abs(shiR4config.customLosOffset);
+		}
+	}
+	return offset;
+}
+
+function checkNavNode(docId, alias, anchor) {
+	
+	var selectorString = "[data-alias='"+alias+"']";
+	if(docId!=null && docId.length>0){
+		selectorString += ",[data-src='" + docId + "'],a[name='"+docId+"']";
+	}
+	
+	var target = $(selectorString);
+	if (target.length < 1) {
+		return true;
+	}
+	
+	var evt = new $.Event("document_load");
+	evt.docId = docId;
+	evt.alias = alias;
+	evt.scroll = true;
+	evt.anchor = "";
+	if(anchor != null && anchor!="ANCHOR"){
+		evt.anchor = anchor;
+	}
+	$(window).trigger(evt);
+	return false;
+}
+
+$(window).on("document_loaded", highlight.initNavigation);
+
+var modal = {
+	open: function(modalId, config){
+		$('#' + modalId).modal(Object.assign({}, config));
+	}, 
+	hide: function(modalId) {
+		$('#' + modalId).modal('hide');
+	},
+	destroy: function(modalId) {
+		$('#' + modalId).modal('dispose');
+	}
+}

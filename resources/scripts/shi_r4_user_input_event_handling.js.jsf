@@ -1,0 +1,22 @@
+
+var shi_r4_userInputEvent = 'mouseup keyup';
+
+function shi_r4_isUserInputEvent(event) {
+	return (event && ((event.type == 'mouseup' && event.which == 1) || event.type == 'pointerup' || event.type == 'click' || (event.type == 'keyup' && (event.key == 'Enter' || event.key == ' '))));
+}
+
+function shi_r4_applyUserInputDelegatedEventHandling(selector, func) {
+	if ((typeof selector == 'string') && (typeof func == 'function')) {
+		$(document).on(shi_r4_userInputEvent, selector, function(e){
+			if (shi_r4_isUserInputEvent(e)) {
+				func(e);
+			}
+		});
+	}
+}
+
+function shi_r4_checkAndExecuteUserInputEventHandling(event, func) {
+	if ((shi_r4_isUserInputEvent(event)) && (typeof func == 'function')) {
+		func(event);
+	}
+}

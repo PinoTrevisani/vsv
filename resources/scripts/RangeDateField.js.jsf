@@ -1,0 +1,160 @@
+var rangedatefieldInstance;
+
+function RangeDateField(render,options){
+	this.options={
+			dateFormat:"dd/MM/yy",
+			groupName:"G1",
+			fieldName:"date",
+			label:{
+				range:"Zeitraum",
+				date:"Datum:",
+				from:"von",
+				until:"bis"
+			},
+			clearButton:true
+	};
+	this.render = render;
+	this.options = $.extend({}, this.options, options);
+	
+	this.dateRange={
+			date:"",
+			startDate:"",
+			endDate:""
+	};
+	this.rendering(true);
+}
+
+RangeDateField.prototype={
+	getPickerOptions:function(suffix,type){
+		type = type==null?"date":type;
+		var that = this;
+		var compositeParamValues = {
+			monthNames : this.options["monthNames"],
+			monthNamesShort : this.options["monthNamesShort"],
+			dayNames : this.options["dayNames"],
+			dayNamesMin : this.options["dayNamesMin"],
+			dayNamesShort : this.options["dayNamesShort"],
+			language : this.options["language"]
+		};
+		var defaultValues = {
+				calendarWeeks : true,
+				dateFormat : this.options.dateFormat,
+				autoclose : true,
+				altField : "#ext__"+this.options.fieldName+suffix,
+				todayHighlight : true,
+				field:type,
+				onSelect:function(dateText,inst){
+					var typ = inst.settings.field;
+					if(typ!="date"){
+						$("[name='date"+typ+"']").val(dateText);
+					}else{
+						$("[name='"+typ+"']").val(dateText);
+					}
+				}
+			};
+		return $.extend(defaultValues, compositeParamValues);
+	},
+	switchToRange:function(){
+		$("[name='date']").val("");
+		this.dateRange.date = $("#ext__" + this.options.fieldName + "Date").val();
+		$("#ext__" + this.options.fieldName + "Date").val("");
+		this.render="range";
+		this.destroyDatePicker("#" + this.options.fieldName);
+		$("#datePanel").hide();
+		if($("[name='dateFrom']").val() == "" && $("[name='dateUntil']").val() == ""){
+			$("#ext__dateRangeFrom").val(this.dateRange.startDate);
+			$("#ext__dateRangeUntil").val(this.dateRange.endDate);
+			$("[name='dateFrom']").val(this.dateRange.startDate);
+			$("[name='dateUntil']").val(this.dateRange.endDate);
+		} else {
+			$("#ext__dateRangeFrom").val($("[name='dateFrom']").val());
+			$("#ext__dateRangeUntil").val($("[name='dateUntil']").val());
+		}
+		$("#rangePanel").show();
+		this.initDatePicker("#datepickerField1",this.getPickerOptions("RangeFrom","From"));
+		this.initDatePicker("#datepickerField2",this.getPickerOptions("RangeUntil","Until"));
+
+	},
+	switchToDate:function(){	
+		$("[name='dateFrom']").val("");
+		$("[name='dateUntil']").val("");
+		this.dateRange.startDate = $("#ext__dateRangeFrom").val();
+		this.dateRange.endDate = $("#ext__dateRangeUntil").val();
+		$("#ext__dateRangeFrom").val("");
+		$("#ext__dateRangeUntil").val("");
+		this.render="date";
+		this.destroyDatePicker("#datepickerField1");
+		this.destroyDatePicker("#datepickerField2");
+		$("#rangePanel").hide();
+		if($("[name='date']").val() == ""){
+			$("#ext__" + this.options.fieldName + "Date").val(this.dateRange.date);
+			$("[name='date']").val(this.dateRange.date);
+		} else {
+			$("#ext__" + this.options.fieldName + "Date").val($("[name='date']").val());
+		}
+		$("#datePanel").show();
+		this.initDatePicker("#" + this.options.fieldName,this.getPickerOptions("Date"));
+	},
+	setValues:function(dateRange){
+		this.dateRange=dateRange;
+	},
+	initDatePicker:function(id,options){
+		$(id).datepicker(options);
+	},
+	destroyDatePicker:function(id){
+		$(id).datepicker("destroy");
+	},
+	rendering:function(init){
+		init = init == null ? false : init;
+		if(init) {
+			if($("[name='selectionInForm']").val() === "range") {
+				this.switchToRange();
+			} else if($("[name='selectionInForm']").val() === "date" || $("[name='selectionInForm']").val() == "") {
+				this.switchToDate();
+			}	
+		} else if(!init && this.render === "date") {
+			this.switchToRange();
+			$("[name='selectionInForm']").val("range");
+		} else if(!init && this.render === "range") {
+			this.switchToDate();
+			$("[name='selectionInForm']").val("date");
+		}	
+		this.changeLabel();
+	},
+	getLabel:function(){
+		return this.render==="date"?this.options.label.date:this.options.label.range;
+	},
+	changeLabel:function(){
+		$("label[for=ext__"+this.options.fieldName+"]").text(this.getLabel());
+	},
+	toggleDatepickerFrom:function(){
+		$("#datepickerField1").datepicker("show"); // hier
+	},
+	toggleDatepickerUntil:function(){
+		$("#datepickerField2").datepicker("show");
+	},
+	toggleDatepicker:function(){
+		$("#"+this.options.fieldName).datepicker("show");
+	}
+}
+
+toggleDatepickerFrom=function(){
+	if(rangedatefieldInstance!=null)
+		rangedatefieldInstance.toggleDatepickerFrom();	
+}
+toggleDatepickerUntil=function(){
+	if(rangedatefieldInstance!=null)
+		rangedatefieldInstance.toggleDatepickerUntil();
+}
+toggleDatepicker=function(){
+	if(rangedatefieldInstance!=null)
+		rangedatefieldInstance.toggleDatepicker();
+}
+
+initRangeDateField = function(render,options,dateRange){
+	rangedatefieldInstance = new RangeDateField(render,options);
+	rangedatefieldInstance.initDatePicker("#"+rangedatefieldInstance.options.fieldName,rangedatefieldInstance.getPickerOptions("Date"));
+	if(dateRange!=null) {
+		rangedatefieldInstance.setValues(dateRange);
+	}
+}

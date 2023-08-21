@@ -1,0 +1,1257 @@
+
+var DATA_TEXTMARKER_INFO = "data-textmarker-info";
+
+var showMarksText = "Markierungsmenü einblenden";
+var hideMarksText = "Markierungsmenü ausblenden";
+var selectResetMarkText = "Bitte wählen Sie die zu ersetzende Markierung aus.";
+var selectRemoveMarkText = "Bitte wählen Sie zum Löschen eine Markierung aus.";
+var showCommentsText = "Kommentierungen einblenden";
+var hideCommentsText = "Kommentierungen ausblenden";
+var currentMarker = null;
+var bWinBindUnload = false;
+var toggleFavoriteForm = false;
+var favoriteFormActive = false;
+
+function Textmarker(options, doSync, loadOnly, printInstance) {
+	if (loadOnly == null) {
+		loadOnly = false;
+	}
+
+	if (doSync == null) {
+		doSync = false;
+	}
+
+	if (printInstance == null) {
+		printInstance = false;
+	}
+
+	this.firstHighlightClick = true;
+	this.options = {
+		isParallelView : false,
+		isWithIframe : false,
+		colorPanel : "textmarkerColorPanel",
+		mainPanel : "textmarkerMainPanel",
+		syncPanel : "textmarkerSyncPanel",
+		nodeFieldId : "textmarkerNoteField",
+		saveBtnId : "textmarkerSaveBtn",
+		formId : "textmarkerColorPanelForm",
+		markerColorClass : "color-panel-item",
+		activeClass : "active",
+		containerId : "content",
+		animationSpeed : 500,
+		maxCommentNumber : 0,
+		currentDocId : "",
+		initialInstantShowComments:false,
+		hasSavedMarkings: false
+	};
+	this.firstTime=true;
+	this.isPrintInstance = printInstance;
+	this.doSync = doSync;
+	this.curCommentNumber = 0;
+	this.commentsShown = false;
+	this.bRestoreMemo = false;
+	this.bTextMarkerOpen = false;
+	this.currentHilights = null;
+	this.currentDocId = null;
+	this.$colorPanel = null;
+	this.$mainPanel = null;
+	this.$syncPanel = null;
+	this.$form = null;
+	this.options = $.extend({}, this.options, options);
+	currentMarker = this;
+	this.isInit=$.Deferred();
+	this.init(loadOnly);
+}
+
+Textmarker.prototype = {
+	/**
+	 * mode 0 = default 0 means loadonscroll 1 means document
+	 */
+	isMode : function(arg) {
+		var mode = typeof (this.options.mode) != "undefined" ? this.options.mode
+				: false;
+		switch (arg) {
+		case 1:
+		case "1":
+			return parseInt(mode) === 1;
+		case 0:
+		case "0":
+			return parseInt(mode) === 0;
+		default:
+			return false;
+		}
+	},
+	// initialize the basic members
+	init : function(loadOnly) {
+		var that = this;
+		that.refresh();
+		if (loadOnly) {
+			that.loadData(processMarkerinfoAndDestroy, false);
+		} else {
+			that.loadData(processMarkerinfo, false, false);
+		}
+		// only if the first document ready, so will bind once the document_changed callback!
+		this.isInit.done(function(){
+			$(window).bind("document_changed", function(e) {
+				that.destroy(false);
+				if(loadOnly && typeof(that.options.mode)!="undefined"){
+					that.refresh();
+					that.loadData(processMarkerinfoAndDestroy, false);
+				}
+			});
+		});
+		
+		if(isTouchDevice()){
+	    	$('#content').ready(this.markerUpdatePolling());
+	    }
+	},
+	updateMainPanel:function(){
+		this.$mainPanel = $("#" + this.options.mainPanel);
+	},
+	// reload the members
+	refresh : function() {
+		this.$colorPanel = $("#" + this.options.colorPanel);
+		if (this.isPrintInstance) {
+			this.$mainPanel = this.options.currentDocId !== "" ? $("#"
+					+ escapeId(this.options.currentDocId)) : $("body");
+		} else {
+			this.updateMainPanel();
+		}
+		this.$syncPanel = $("#" + this.options.syncPanel);
+		this.$form = $("#" + this.options.formId);
+		if (this.$mainPanel.getHighlighter() == null) {
+			this.initializeMainTextHighlighter();
+			this.getNoteField().on("keyup", function() {
+				if ("" !== $(this).val()) {
+					setConfirmUnload(true);
+				} else {
+					setConfirmUnload(false);
+				}
+			})
+		}
+
+		if (this.doSync && this.$syncPanel.getHighlighter() == null) {
+			this.initializeSyncTextHighlighter();
+		}
+	},
+
+	// getter
+	getMainPanel : function() {
+		if (this.options.isWithIframe) {
+			return $(this.$mainPanel).contents();
+		} else {
+			if(0===$(this.$mainPanel).length){
+				this.updateMainPanel();
+			}
+			return $(this.$mainPanel);
+		}
+	},
+
+	// getter
+	getForm : function() {
+		return $(this.$form);
+	},
+
+	// getter
+	getSaveButton : function() {
+		var form = this.getForm();
+		if (form != null) {
+			return $(form).find("[id$=" + this.options.saveBtnId + "]");
+		}
+	},
+
+	// getter
+	getSyncPanel : function() {
+		if (this.options.isWithIframe) {
+			return $(this.$syncPanel).contents();
+		} else {
+			return $(this.$syncPanel);
+		}
+	},
+
+	// getter
+	getNoteField : function() {
+		return $(this.$colorPanel).find(
+				"[id$=" + this.options.nodeFieldId + "]");
+	},
+
+	// getter
+	getActiveColorItem : function() {
+		var currentColor = $(this.$colorPanel).find(
+				"." + this.options.activeClass).first();
+		if ($(currentColor).length === 0) {
+			currentColor = $(this.$colorPanel).find(
+					"." + this.options.markerColorClass).first();
+		}
+		return currentColor;
+	},
+	
+	_doInfo:function(callback,previous){
+		var info = this.getMainPanel().attr(DATA_TEXTMARKER_INFO);
+		if(info == null){
+			info = this.getMainPanel().find("[" + DATA_TEXTMARKER_INFO + "]").first().attr(DATA_TEXTMARKER_INFO);
+		}
+		
+		callback(info, previous, false);
+		this.isInit.resolve();
+	},
+	
+	// ajax for load data from backend(json response)
+	// print instance load data from attribute
+	loadData : function(callback, previous) {
+		if (parent == null) {
+			parent = window;
+		}
+
+		if (previous == null) {
+			previous = false;
+		}
+
+		var that = this;
+		if (this.isPrintInstance) {
+			$("["+DATA_TEXTMARKER_INFO+"]").each(function(k, v) {
+				that.options.currentDocId = $(v).attr("id");
+				if(that.options.currentDocId!=null){
+					that.$mainPanel = ("#" + escapeId(that.options.currentDocId));
+					if (that.getMainHighlighter() == null) {
+						that.initializeMainTextHighlighter();
+					}
+					callback($(v).attr(DATA_TEXTMARKER_INFO), previous, false);
+				}
+			});
+		}else if(this.isMode(0)||this.isMode(1)){
+			if (that.getMainHighlighter() == null) {
+				that.initializeMainTextHighlighter();
+			}
+			if(this.isMode(0)&&this.firstTime===true){
+				this.firstTime=false;
+				
+				$(window).bind("document_changed", function(e){
+//					var dId = e.docId!=null && ! e.docId.startsWith("docs/")?"docs/"+e.docId:e.docId;
+					if(e.docId === that.options.currentDocId){
+						$(window).unbind("document_changed", this);
+						that._doInfo(callback,previous);
+						if(that.options.initialInstantShowComments!=null && that.options.initialInstantShowComments===true){
+							that.showAllComments();
+						}
+					}
+				});
+			}else{
+				that._doInfo(callback,previous);
+				if(that.options.initialInstantShowComments!=null && that.options.initialInstantShowComments===true){
+					that.showAllComments();
+				}
+			}
+		} else {
+			$.ajax({
+						url : parent.contextPath + "/textmarker",
+						type : "POST",
+						dataType : "text",
+						contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+						data : {
+							getprevious : previous,
+							markersdoc : that.options.currentDocId
+						},
+
+						success : function(data, textStatus, jqXHR) {
+							callback(data, previous, false);
+						},
+
+						error : function(jqXHR, textStatus, errorThrown) {
+							alert("load failed. Try again!");
+						}
+					});
+		}
+	},
+
+	// init method for main panel highligher
+	initializeMainTextHighlighter : function() {
+		this.getMainPanel().textHighlighter(this.getMainPanel());
+		var highlighter = this.getMainHighlighter();
+		if(highlighter != null)
+			highlighter.setStyle(
+				$(this.getActiveColorItem()).attr("data-style"));
+	},
+
+	// init method for sync panel highligher
+	initializeSyncTextHighlighter : function() {
+		this.getSyncPanel().textHighlighter(this.getSyncPanel());
+		$(this.$colorPanel).find(this.options.markerColorItem).each(
+				function(key, value) {
+					$(value).attr('href', '#').css('cursor', 'default').off(
+							'click');
+				});
+
+		$(this.$syncPanel)
+				.attr(
+						'style',
+						'-webkit-touch-callout: none;-webkit-user-select: none;-khtml-user-select: none;-moz-user-select: none;-ms-user-select: none;user-select: none;');
+	},
+
+	// destructor
+	destroy : function(holdmarks) {
+		holdmarks = holdmarks != null ? holdmarks : false;
+		var that = this;
+		this.hideAllComments();
+		if (this.doSync) {
+			var syncHighlights = this.getSyncHighlights();
+			if (this.getSyncHighlighter() != null) {
+				this.getSyncHighlighter().destroy();
+			} else if (this.getSyncHighlighter() == null && !holdmarks) {
+				this.getSyncPanel().textHighlighter(this.getSyncPanel());
+				this.getSyncHighlighter().removeHighlights(syncHighlights);
+				$(this.getSyncPanel()).find('#unassignedHighlights').remove();
+				this.getSyncHighlighter().destroy();
+			}
+
+			syncHighlights.off('mouseup');
+			syncHighlights.on('mouseup', function() {
+				that.toggleComment(this, true);
+			});
+		}
+
+		var highlights = this.getHighlights();
+		if (this.getMainHighlighter() != null) {
+			this.getMainHighlighter().destroy();
+		} else if (this.getMainHighlighter() == null && !holdmarks) {
+			this.getMainPanel().textHighlighter(this.getMainPanel());
+			this.getMainHighlighter().removeHighlights(highlights);
+			$(this.getMainPanel()).find('#unassignedHighlights').remove();
+			this.getMainHighlighter().destroy();
+		}
+
+		this.options.maxCommentNumber = this.getCountDisplayableComments();
+		highlights.off('mouseup');
+		highlights.on('mouseup', function() {
+			that.toggleComment(this, false);
+		});
+
+		if (bWinBindUnload) {
+			bWinBindUnload = false;
+			$(window).unbind("beforeunload");
+		}
+	},
+
+	// destructor
+	destroyMainHighlighter : function(holdmarks) {
+		holdmarks = holdmarks != null ? holdmarks : false;
+		var that = this;
+		this.hideAllComments();
+		var highlights = this.getHighlights();
+		if (this.getMainHighlighter() != null) {
+			this.getMainHighlighter().destroy();
+		} else if (this.getMainHighlighter() == null && !holdmarks) {
+			this.getMainPanel().textHighlighter(this.getMainPanel());
+			this.getMainHighlighter().removeHighlights(highlights);
+			$(this.getMainPanel()).find('#unassignedHighlights').remove();
+			this.getMainHighlighter().destroy();
+		}
+
+		this.options.maxCommentNumber = this.getCountDisplayableComments();
+		highlights.off('mouseup');
+		highlights.on('mouseup', function() {
+			that.toggleComment(this, false);
+		});
+
+		if (bWinBindUnload) {
+			bWinBindUnload = false;
+			$(window).unbind("beforeunload");
+		}
+	},
+
+	// destructor
+	destroySyncHighlighter : function(holdmarks) {
+		holdmarks = holdmarks != null ? holdmarks : false;
+		var that = this;
+		this.hideAllComments();
+		var syncHighlights = this.getSyncHighlights();
+		if (this.getSyncHighlighter() != null) {
+			this.getSyncHighlighter().destroy();
+		} else if (this.getSyncHighlighter() == null && !holdmarks) {
+			this.getSyncPanel().textHighlighter(this.getSyncPanel());
+			this.getSyncHighlighter().removeHighlights(syncHighlights);
+			$(this.getSyncPanel()).find('#unassignedHighlights').remove();
+			this.getSyncHighlighter().destroy();
+		}
+
+		this.options.maxCommentNumber = this.getCountDisplayableComments();
+		syncHighlights.off('mouseup');
+		syncHighlights.on('mouseup', function() {
+			that.toggleComment(this, true);
+		});
+
+		if (bWinBindUnload) {
+			bWinBindUnload = false;
+			$(window).unbind("beforeunload");
+		}
+	},
+
+	// update method (mainpanel)
+	updateMainMouseUps : function() {
+		this.getHighlights().off('mouseup');
+		var that = this;
+		this.getHighlights().on(
+				'mouseup',
+				function() {
+					var highlights = that.getMainHighlighter()
+							.getAllHighlights(this, true);
+					that.bRestoreMemo = false;
+					that.highlightsChanged(highlights);
+				});
+	},
+
+	// update method (syncpanel)
+	updateSyncMouseUps : function() {
+		this.getSyncHighlights().off('mouseup');
+		var that = this;
+		this.getSyncHighlights().on(
+				'mouseup',
+				function() {
+					var highlights = that.getSyncHighlighter()
+							.getAllHighlights(this, true);
+					that.bRestoreMemo = false;
+					that.prevHighlightsChanged(highlights);
+				});
+	},
+
+	// setter
+	setActiveColor : function(element) {
+		$(this.$colorPanel).find("." + this.options.activeClass).removeClass(
+				this.options.activeClass);
+		$(element).addClass(this.options.activeClass);
+		this.getMainHighlighter().setStyle($(element).attr('data-style'));
+	},
+	setColorPickerColor : function(color) {
+    $(this.$colorPanel).find("." + this.options.activeClass).removeClass(
+        this.options.activeClass);
+    this.getMainHighlighter().setStyle('background-color:' + color);
+  },
+	// for setnewhighlights
+	changeToColor : function(element) {
+		var that = this;
+		var bgcolor = getBackgroundColor(element);
+		var deco = $(element).css("text-decoration");
+		var colr = $(element).css("color");
+		var found = new Array();
+		$(this.$colorPanel).find("." + this.options.markerColorClass).each(
+				function(k, v) {
+					var sty = style2Json($(v).attr("data-style"));
+					if (sty.backgroundcolor === bgcolor
+							|| sty.textdecoration === deco
+							|| sty.color === colr) {
+						found.push($(v));
+					}
+				});
+		if (found.length === 1) {
+			this.setActiveColor(found[0]);
+		} else if (found.length > 1 && deco !== "") {
+			// get closer!
+			$(found).each(
+					function(k, v) {
+						var sty = style2Json($(v).attr("data-style"));
+						if (-1 < sty.textdecoration.indexOf(deco)
+								&& -1 < sty.color.indexOf(colr)) {
+							this.setActiveColor($(v));
+							return;
+						}
+					})
+		}
+	},
+
+	// getter
+	getMainHighlighter : function() {
+		return this.getMainPanel().getHighlighter();
+	},
+
+	// getter
+	getSyncHighlighter : function() {
+		return this.getSyncPanel().getHighlighter();
+	},
+
+	// getter
+	getHighlights : function() {
+		return this.getMainPanel().find('.highlighted');
+	},
+
+	getSyncHighlights : function() {
+		return this.getSyncPanel().find('.highlighted');
+	},
+
+	// getter counting the max number of comments
+	getCountDisplayableComments : function() {
+		var iCount = 0;
+		var currentTitle = '';
+		var currentId = '';
+		$.each(this.getHighlights(), function() {
+			var title = $(this).attr('title');
+			if (title == '' || title == null || title == undefined)
+				return;
+			var id = $(this).attr('data-highlights-id');
+			if ((title != currentTitle) || (id != currentId)) {
+				currentId = id;
+				currentTitle = title;
+				iCount++;
+			}
+		});
+
+		$.each(this.getSyncHighlights(), function() {
+			var title = $(this).attr('title');
+			if (title == '' || title == null || title == undefined)
+				return;
+			var id = $(this).attr('data-highlights-id');
+			if ((title != currentTitle) || (id != currentId)) {
+				currentId = id;
+				currentTitle = title;
+				iCount++;
+			}
+		});
+
+		return iCount;
+	},
+
+	// init
+	initializeTextHighlighter : function() {
+		if (this.doSync) {
+			this.initializeSyncTextHighlighter();
+		}
+
+		this.initializeMainTextHighlighter();
+	},
+
+	// calls functions to display the markings gotten from backend
+	processData : function(data, previous, destroy) {
+		if (previous) {
+			this.getSyncHighlighter().deserializeHighlights(data,
+					$(this.getSyncPanel()));
+			// Hide the still connected markings
+			var prevHighlights = this.getSyncHighlights();
+			var currentHighlights = this.getHighlights();
+			for (var i = 0; i < prevHighlights.length; i++) {
+				var markingIsAssigned = false;
+				for (var j = 0; j < currentHighlights.length; j++) {
+					if ($(prevHighlights[i]).attr('data-highlights-id') == $(
+							currentHighlights[j]).attr('data-highlights-id')) {
+						markingIsAssigned = true;
+					}
+				}
+
+				if (markingIsAssigned) {
+					this.removeSyncWarning($(prevHighlights[i]).attr(
+							'data-highlights-id'));
+					$(prevHighlights[i]).css({
+						'background-color' : '#FFFFFF',
+						'text-decoration' : 'none'
+					}).removeAttr('data-highlights-id').removeClass(
+							'highlighted').on('click', function() {
+						return false;
+					});
+
+					break;
+				}
+			}
+
+			this.updateSyncMouseUps();
+		} else {
+			this.getMainHighlighter().deserializeHighlights(data, $(this.getMainPanel()));
+			if (this.doSync) {
+				if (destroy) {
+					this.loadData(processMarkerinfoAndDestroy, true);
+				} else {
+					this.loadData(processMarkerinfo, true, false);
+				}
+			}
+		}
+
+		// Count Highlights
+		this.maxCommentNumber = this.getCountDisplayableComments();
+		this.updateMainMouseUps();
+	},
+
+	// sets dashed border around selected markings
+	markCurrentHilights : function() {
+		if (this.currentHilights != null) {
+			$.each(this.currentHilights, function(i) {
+
+				$(this).css('border', '1px dashed #000000');
+			});
+			$(this.getNoteField()).removeAttr('disabled');
+		}
+	},
+
+	// removes border around selected markings
+	unmarkHilights : function() {
+		this.getHighlights().css('border', '0 none');
+		if (this.doSync) {
+			this.getSyncHighlights().css('border', '0 none');
+		}
+
+		$(this.getNoteField()).attr('disabled', 'disabled');
+	},
+
+	// action when highlights have changed
+	highlightsChanged : function(highlights) {
+		// set the title of the previous highlight
+		if (!this.firstHighlightClick) {
+			setHighlightsTitle(this.currentHilights, $(this.getNoteField())
+					.val());
+		}
+
+		this.firstHighlightClick = false;
+
+		this.hideNoSelectionMessages();
+		this.hideSaveMessages();
+		this.unmarkHilights();
+		if (this.currentHilights && $(this.currentHilights[0]).attr('title')
+				&& this.bRestoreMemo) {
+			// Restore memo from current highlight
+			var memo = $(this.currentHilights[0]).attr('title');
+			$(this.getNoteField()).val(memo);
+			setHighlightsId(highlights, $(this.currentHilights[0]).attr(
+					'data-highlights-id'));
+			setHighlightsTitle(highlights, memo);
+			this.bRestoreMemo = false;
+		} else {
+			if (highlights.length > 0) {
+				// Either fill in known memo text or clear textarea for new
+				// highlight
+				var memo = $(highlights[0]).attr('title');
+				$(this.getNoteField()).val(memo ? memo : '');
+				if (!$(highlights[0]).attr('data-highlights-id')) {
+					// Set fresh Id for new highlight
+					setHighlightsId(highlights, this.getNextHighlightID());
+				} else {
+					// Prevent additional events from parent highlights
+					removeMouseupChain(highlights.first());
+					// Get all highlights with same id as clicked element
+					highlights = this.getHighlightsById($(highlights[0]).attr(
+							'data-highlights-id'));
+					// Restore
+					setTimeout("updateMouseUps();", 0);
+				}
+			}
+			// if change detection is required // unsavedChangesNotification // TODO: find a better way to grab the changes
+			/* if (ucn_configuration_object) {
+				ucn_configuration_object.globalAllSubmitted = false;
+			} */
+		}
+
+		this.currentHilights = highlights;
+		this.markCurrentHilights();
+	},
+
+	// action when highlights in sync container have changed
+	prevHighlightsChanged : function(highlights) {
+		this.hideNoSelectionMessages();
+		this.hideSaveMessages();
+		this.unmarkHilights();
+		if (this.currentHilights && $(this.currentHilights[0]).attr('title')
+				&& this.bRestoreMemo) {
+			// Restore memo from current highlight
+			var memo = $(this.currentHilights[0]).attr('title');
+			$(this.getNoteField()).val(memo);
+			setHighlightsId(highlights, $(this.currentHilights[0]).attr(
+					'data-highlights-id'));
+			this.bRestoreMemo = false;
+		} else {
+			if (highlights.length > 0) {
+				// Either fill in known memo text or clear textarea for new
+				// highlight
+				var memo = $(highlights[0]).attr('title');
+				$(this.getNoteField()).val(memo ? memo : '');
+
+				if (!$(highlights[0]).attr('data-highlights-id')) {
+					// Set fresh Id for new highlight
+					setHighlightsId(highlights, this.getNextHighlightID());
+				} else {
+					// Prevent additional events from parent highlights
+					removeMouseupChain(highlights.first());
+					// Get all highlights with same id as clicked element
+					highlights = this.getSyncHighlightsById($(highlights[0])
+							.attr('data-highlights-id'));
+					// Restore
+					this.updateSyncMouseUps();
+				}
+			}
+			// if change detection is required // unsavedChangesNotification // TODO: find a better way to grab the changes
+			/*
+			if (ucn_configuration_object) {
+				ucn_configuration_object.globalAllSubmitted = false;
+			}
+			*/
+		}
+
+		this.currentHilights = highlights;
+		this.markCurrentHilights();
+	},
+
+	// getter
+	getUnboundHighlights : function() {
+		return this.getMainPanel().find('#unassignedHighlights .highlighted');
+	},
+
+	// getter
+	getHighlightsById : function(id) {
+		// Convenience Wrapper to get highlights with matching Ids
+		return this.getMainPanel()
+				.find("span[data-highlights-id='" + id + "']");
+	},
+
+	// getter
+	getSyncHighlightsById : function(id) {
+		// Convenience Wrapper to get highlights with matching Ids
+		return this.getSyncPanel()
+				.find("span[data-highlights-id='" + id + "']");
+	},
+
+	// getter
+	getWarningById : function(id) {
+		// Convenience Wrapper to get highlights with matching Ids
+		return this.getMainPanel().find("img[data-warning-id='" + id + "']");
+	},
+
+	// getter
+	getSyncWarningById : function(id) {
+		// Convenience Wrapper to get highlights with matching Ids
+		return this.getSyncPanel().find("img[data-warning-id='" + id + "']");
+	},
+
+	// getter
+	getNextHighlightID : function() {
+		var nextId = 0;
+		// Scan for highest id
+		$.each(this.getHighlights(), function(i) {
+			// Check attribute first
+			var sId = $(this).attr('data-highlights-id');
+			if (!sId)
+				return;
+			nextId = Math.max(parseInt(sId), nextId);
+		});
+		return (++nextId) + this.currentDocId;
+	},
+
+	// removes style from markings to make them invisible while still being
+	// there
+	hideHighlights : function() {
+		$(this.getHighlights()).each(function(k, v) {
+			$(v).attr("style", "");
+			$(v).off("mouseup");
+		});
+	},
+
+	// set new position for marking and comment
+	setNewHighlights : function() {
+		this.hideNoSelectionMessages();
+		this.hideSaveMessages();
+		if (this.currentHilights != null) {
+			// Remove selected highlight from HTML
+			this.hideComment(this.currentHilights[0], false);
+			this.hideComment(this.currentHilights[0], true);
+			var elem = this.currentHilights[0];
+			this.getMainHighlighter().removeHighlights(this.currentHilights);
+			this.changeToColor(elem);
+			this.removeWarning($(this.currentHilights[0]).attr(
+					'data-highlights-id'));
+			this.bRestoreMemo = true;
+		} else {
+			alert(selectResetMarkText);
+		}
+	},
+
+	// removes comment from display
+	hideComment : function(element, isInSyncPanel) {
+		var id = $(element).attr('data-highlights-id');
+		if (isInSyncPanel) {
+			this.getSyncPanel().find(
+					"span[data-highlights-comment-id='" + id + "']").remove();
+		} else {
+			this.getMainPanel().find(
+					"span[data-highlights-comment-id='" + id + "']").remove();
+		}
+		// One less comment is visible
+		this.curCommentNumber--;
+		if (this.curCommentNumber == 0) {
+			this.commentsShown = false;
+		}
+	},
+
+	// deletes currently selected markings
+	deleteCurrentHighlights : function() {
+		this.hideNoSelectionMessages();
+		this.hideSaveMessages();
+		if (this.currentHilights != null) {
+			this.hideComment(this.currentHilights[0]);
+			$(this.getNoteField()).val('');
+			this.getMainHighlighter().removeHighlights(this.currentHilights);
+			this.removeWarning($(this.currentHilights[0]).attr(
+					'data-highlights-id'));
+			this.currentHilights = null;
+			this.unmarkHilights();
+		} else {
+			alert(selectRemoveMarkText);
+		}
+	},
+
+	// removes the waring image
+	removeWarning : function(id) {
+		var warning = this.getWarningById(id);
+		if (warning) {
+			$(warning).remove();
+		}
+	},
+
+	// removes warning image from sync container
+	removeSyncWarning : function(id) {
+		var warning = this.getSyncWarningById(id);
+		if (warning) {
+			$(warning).remove();
+		}
+	},
+
+	// removes all warnings from main panel
+	removeWarnings : function() {
+		this.getMainPanel().find('.warningimg').remove();
+	},
+
+	// save markings
+	initiateSaveHighlights : function() {
+		var currentHighlights = this.getHighlights();
+		if (!this.hasSavedMarkings && (currentHighlights == null || currentHighlights == undefined || currentHighlights.length < 1)) {
+			this.showNoSelectionMessages();
+		} else {
+			// Remove before saving
+			this.hideAllComments();
+			this.removeWarnings();
+			this.unmarkHilights();
+			this.hideNoSelectionMessages();
+			this.hideSaveMessages();
+			setHighlightsTitle(this.currentHilights, $(this.getNoteField()).val());
+			// Count Highlights
+			this.maxCommentNumber = this.getCountDisplayableComments();
+			var markerInfoJSON = this.getMainHighlighter().serializeHighlights();
+			this.prepareFavorite();
+			$("[name=markerInfo]").val(markerInfoJSON);
+			// this.getForm().find('[name=markerInfo]').val(markerInfoJSON); wrong
+			// form taken
+			var btn = this.getSaveButton();
+			$(btn).click();
+			// Restore
+			this.markCurrentHilights();
+			// Remove parallelview
+			// TODO: check if this can still be done like this
+			if (this.options.isParallelView) {
+				this.options.isParallelView = false;
+				this.getSyncPanel().remove();
+			}
+			setConfirmUnload(false);
+		}
+	},
+
+	// used for touch input
+	markerUpdatePolling : function() {
+		var selecChanged = false;
+		var update = true;
+		var highlighter = this.getMainHighlighter();
+		var currentSelection = undefined;
+		// If selection didn't change in the last two seconds, update
+		// highlighting
+		updateAfterSec = setInterval(function() {
+			try {
+				if (highlighter.getCurrentSelection()) {
+					if (!selecChanged && update) {
+						highlighter.doHighlight();
+						update = false;
+					}
+					// selecChanged -> false means, that there were no changes
+					// in the last two seconds
+					selecChanged = false;
+				}
+			} catch (e) {
+			}
+		}, 2000);
+		// Check for selection changes every 20ms
+		checkForChanges = setInterval(function() {
+			try {
+				if (!selecChanged && highlighter.getCurrentSelection()) {
+					var oldSelection = currentSelection;
+					currentSelection = highlighter.getCurrentRange();
+					if (currentSelection != undefined) {
+						if (String(currentSelection) !== String(oldSelection)) {
+							selecChanged = true;
+							update = true;
+						}
+					}
+				}
+			} catch (e) {
+			}
+		}, 20);
+	},
+
+	// 
+	
+	hideNoSelectionMessages : function() {
+		$(this.$colorPanel).find('.marker-no-selection-messages')
+			.css('display', 'none');
+	},
+	
+	showNoSelectionMessages : function() {
+		$(this.$colorPanel).find('.marker-no-selection-messages')
+		.css('display', '');
+	},
+	
+	hideSaveMessages : function() {
+		$(this.$colorPanel).find('.marker-save-messages')
+				.css('display', 'none');
+	},
+	
+	//
+	showSaveMessages : function(boolSuccess) {
+		if (boolSuccess == "true") {
+			$(this.$colorPanel).find('.marker-save-messages:first').css(
+					'display', '');
+		} else {
+			$(this.$colorPanel).find('.marker-save-messages:last').css(
+					'display', '');
+		}
+	},
+
+	// toggles display of all comments: if any is shown, all are hidden;
+	// otherwise all get shown 
+	toggleAllComments : function() {
+		if (this.commentsShown) {
+			this.hideAllComments();
+			return;
+		}
+
+		this.showAllComments();
+	},
+
+	//
+	showAllComments : function() {
+		var that = this;
+		if(that.isPrintInstance) {
+			return;
+		}
+		
+		$.each(this.getHighlights(), function() {
+			that.showComment(this, false);
+		});
+
+		$.each(this.getSyncHighlights(), function() {
+			that.showComment(this, true);
+		});
+
+		this.commentsShown = true;
+		this.curCommentNumber = this.maxCommentNumber;
+	},
+
+	//
+	hideAllComments : function() {
+		var that = this;
+		$.each(this.getHighlights(), function() {
+			that.hideComment(this, false);
+		});
+
+		$.each(this.getSyncHighlights(), function() {
+			that.hideComment(this, true);
+		});
+
+		this.commentsShown = false;
+		this.curCommentNumber = 0;
+	},
+
+	// 
+	toggleComment : function(element, isInSyncPanel) {
+		// Don't toggle when element is in unassigned list
+		var state = $(element).attr('data-restore-state');
+		if (state == "4") {
+			return;
+		}
+		var id = $(element).attr('data-highlights-id');
+		if (isInSyncPanel) {
+			if (this.getSyncPanel().find(
+					"span[data-highlights-comment-id='" + id + "']").length) {
+				this.hideComment(element, true);
+				return;
+			}
+		} else {
+			if (this.getMainPanel().find(
+					"span[data-highlights-comment-id='" + id + "']").length) {
+				this.hideComment(element, false);
+				return;
+			}
+		}
+		this.showComment(element, isInSyncPanel);
+	},
+
+	//
+	showComment : function(element, isInSyncPanel) {
+		var id = $(element).attr('data-highlights-id');
+		var title = $(element).attr('title');
+		var marking;
+		if (isInSyncPanel) {
+			marking = this.getSyncHighlightsById(id).last()
+		} else {
+			marking = this.getHighlightsById(id).last()
+		}
+
+		var find = '\n';
+		var re = new RegExp(find, 'g');
+		var markingTitle = $(marking).attr('title');
+		var text = (markingTitle != null ? markingTitle : "")
+				.replace(re, ' | ');
+		if (isInSyncPanel) {
+			if (this.getSyncPanel().find(
+					"span[data-highlights-comment-id='" + id + "']").length) {
+				return;
+			}
+		} else {
+			if (this.getMainPanel().find(
+					"span[data-highlights-comment-id='" + id + "']").length) {
+				return;
+			}
+		}
+		// TODO: add configurability
+		if (text != '' && text != null && text != undefined) {
+			$(marking)
+					.after(
+							'<span onselectstart="return false;" style="background-color:#DDDDDD;margin-left:3px;margin-right:3px;-webkit-touch-callout: none;-webkit-user-select: none;-khtml-user-select: none;-moz-user-select: none;-ms-user-select: none;user-select: none;" data-highlights-comment-id="'
+									+ id + '">[' + text + ']</span>');
+			// One more comment is visible
+			this.curCommentNumber++;
+			if (this.curCommentNumber == this.maxCommentNumber) {
+				this.commentsShown = true;
+			}
+		}
+	},
+
+	// 
+	markerinfoResponse : function(data, result) {
+		var resultSaveMarkerInfo = $("[name=resultSaveMarkerInfo]").val();
+
+		if (data.status == 'begin') {
+			favoriteFormActive = $('.favoriteForm').is(':visible');
+		} else if (data.status == "success" && resultSaveMarkerInfo == "true") {
+			currentMarker.showSaveMessages("true");
+			$("[name=resultSaveMarkerInfo]").val("false");
+		} else if ((data.status == "success" && resultSaveMarkerInfo == "false")
+				|| data.status == "error") {
+			currentMarker.showSaveMessages("false");
+		}
+
+		// keep favorite open while rerendering
+		if (data.status == 'success' && favoriteFormActive === true
+				&& toggleFavoriteForm === true) {
+			$('#textmarkerCreateFavorite').click();
+		}
+	},
+	prepareFavorite : function() {
+		var enable = $("#textmarkerCreateFavorite").is(":checked");
+		var value = $("#textmarkerCreateFavorite").val();
+		var title = $("#textmarkerTitle").val();
+		var parentAliasChain = $(".favoriteForm").find("[name=parentAliasChain]").val();
+		var form = this.getForm();
+		this.formPrepareForFavorite();
+		if (enable === true) {
+			$(form).find("[name=title]").val(title);
+			$(form).find("[name=parentAliasChain]").val(parentAliasChain);
+			$(form).find("[name=textmarkerCreateFavorite]").val(value);
+		}
+	},
+	formPrepareForFavorite : function() {
+		var form = this.getForm();
+		if (!$(form).find("[name=title]").length > 0) {
+			$("<input type='hidden' name='title' value=''/>").appendTo(form);
+		}
+		if (!$(form).find("[name=textmarkerCreateFavorite]").length > 0) {
+			$("<input type='hidden' name='textmarkerCreateFavorite' value=''/>")
+					.appendTo(form);
+		}
+		if (!$(form).find("[name=parentAliasChain]").length > 0) {
+			$("<input type='hidden' name='parentAliasChain' value=''/>")
+					.appendTo(form);
+		}
+	}
+
+// EOC//
+}
+
+// callback for Textmarker#loadData(callback)
+function processMarkerinfo(markerinfo, previous, destroy) {
+	if (destroy == undefined || destroy == null) {
+		destroy = false;
+	}
+
+	if(!destroy) {
+		$("#markingsChangedMessage").remove();
+	}
+	
+	if (markerinfo == null || markerinfo == undefined || markerinfo.length < 3) {
+		return;
+	}
+	
+	currentMarker.hasSavedMarkings = true;
+
+	// Init textmarker if necessary
+	if (previous && currentMarker.getSyncHighlighter() == null) {
+		currentMarker.initializeSyncTextHighlighter();
+	} else if (!previous && currentMarker.getMainHighlighter() == null) {
+		currentMarker.initializeTextHighlighter();
+	}
+
+	// Deserialize info
+	var find = '&#92;';
+	var re = new RegExp(find, 'g');
+	markerinfo = markerinfo.replace(re, '\\');
+	currentMarker.processData(markerinfo, previous, destroy);
+}
+
+function processMarkerinfoAndDestroy(markerinfo, previous, destroy) {
+	processMarkerinfo(markerinfo, previous, true);
+	if (previous) {
+		currentMarker.destroySyncHighlighter();
+	} else {
+		currentMarker.destroyMainHighlighter();
+	}
+
+}
+
+function setHighlightsId(highlights, id) {
+	if (highlights != null) {
+		$.each(highlights, function(i) {
+			$(this).attr('data-highlights-id', id);
+		});
+	}
+}
+
+function setHighlightsTitle(highlights, memo) {
+	if (highlights != null) {
+		$.each(highlights, function(i) {
+			$(this).attr('title', memo);
+		});
+	}
+}
+
+function removeMouseupChain(highlights) {
+	$(highlights).off('mouseup');
+	$(highlights).parents('.highlighted').each(function() {
+		$(this).off('mouseup');
+	})
+}
+
+function isTouchDevice() {
+	if (navigator.userAgent.toLowerCase().indexOf("touch") != -1
+			|| navigator.userAgent.toLowerCase().indexOf("tablet") != -1
+			|| navigator.userAgent.toLowerCase().indexOf("mobile") != -1
+			|| navigator.userAgent.toLowerCase().indexOf("ipad") != -1
+			|| navigator.userAgent.toLowerCase().indexOf("iphone") != -1) {
+		return true;
+	} else {
+  		return (('ontouchstart' in window) ||
+     		(navigator.maxTouchPoints > 0) ||
+     		(navigator.msMaxTouchPoints > 0));
+	}
+}
+
+function checkAllTextmarkerImport() {
+	var checkBoxes = $('#textmarkerImportExportForm\\:importCheckBoxes input');
+	var someNotChecked = false;
+	for (var i = 0; i < checkBoxes.length; i++) {
+		if (!$(checkBoxes[i]).prop('checked')) {
+			someNotChecked = true;
+			break;
+		}
+	}
+	if (someNotChecked) {
+		$(checkBoxes).prop('checked', true);
+	} else {
+		$(checkBoxes).prop('checked', false);
+	}
+}
+
+function updateMouseUps() {
+	currentMarker.updateMainMouseUps();
+	setConfirmUnload(true);
+}
+
+function highlightsChanged(highlights) {
+	currentMarker.highlightsChanged(highlights);
+	setConfirmUnload(true);
+}
+
+function printTextmarker() {
+	currentMarker = new Textmarker(printOptions, false, false, true);
+	currentMarker.showAllComments();
+}
+
+function checkEnableFavorite(element) {
+	$("#textmarkerParentAliasChain,#textmarkerTitle").prop("disabled",
+			!$(element).is(":checked"));
+
+	if (toggleFavoriteForm == false && $('.favoriteForm').is(':hidden')) {
+		toggleFavoriteForm = true;
+	}
+
+	if (toggleFavoriteForm == true) {
+		$('.favoriteForm').toggle();
+	}
+}
+
+function keyCheckEnableFavorite(element, e){
+	var enterKey = 13;
+	if(enterKey == (e.keyCode ? e.keyCode : e.which)){
+		if($(element).is(":checked")){
+			$(element).prop("checked", false);
+		}else{
+			$(element).prop("checked", true);
+		}
+		checkEnableFavorite(element);
+	}
+}
+
+function componentToHex(c) {
+	var hex = parseInt(c, 10).toString(16).toUpperCase();
+	return hex.length == 1 ? "0" + hex : hex;
+}
+
+function rgbToHex(r, g, b) {
+	return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+}
+
+function getBackgroundColor(element) {
+	var rgbStr = $(element).css("background-color");
+	if (rgbStr === "rgba(0, 0, 0, 0)") {
+		return "#000000";
+	}
+	var rgb = rgbStr.substring(rgbStr.indexOf("(") + 1, rgbStr.indexOf(")"));
+	var parts = rgb.split(",");
+	var result = rgbToHex($.trim(parts[0]), $.trim(parts[1]), $.trim(parts[2]));
+//	console.log("getBackgroundColor:" + result);
+	return result;
+}
+
+function style2Json(input) {
+	var defines = input.split(";");
+	var result = "";
+	for (var i = 0; i < defines.length; i++) {
+		var values = defines[i].split(":");
+		if (values.length === 2) {
+			if (result !== "")
+				result += ",";
+			result += "\"" + (values[0].replace(/-/g, "")) + "\":\""
+					+ values[1] + "\"";
+		}
+	}
+	return JSON.parse("{" + result + "}");
+}
+
+function toggleAllTextmarkerComments(){
+	currentMarker.toggleAllComments();
+}
+
+
+// TODO: configurable via property
+function setConfirmUnload(on) {
+	var message = "Sie haben ungespeicherte Änderungen, möchten Sie diese Seite trotzdem verlassen ?";
+	window.onbeforeunload = (on) ? function() { return message; } : null;
+}
+

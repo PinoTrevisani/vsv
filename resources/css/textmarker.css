@@ -1,0 +1,48 @@
+.color-panel-item {
+	border: groove 0.2rem #000;
+	margin:0.3rem;
+}
+
+.color-panel-item:hover {
+   cursor:pointer;
+}
+
+.color-panel-item.active {
+	border: groove 0.2rem #FFF;
+}
+
+.textmarkerStatusCheckDiv {
+	background-color: #000;
+	filter:alpha(opacity=10);
+	opacity: 10%;
+	height: 100%;
+	left: 0;
+	position: fixed;
+	top: 0;
+	width: 100%;
+	z-index: 999999;
+	-webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.textmarkerStatusCheckText {
+	background-color:#EFEFEF;
+	position:absolute;
+	top:50%;
+	font-size:22px;
+	width:100%;
+	padding:10px;
+	border:solid 1px #BBBFC2;
+	text-align:center;
+	z-index:10000;
+	-webkit-touch-callout: none;
+   -webkit-user-select: none;
+   -khtml-user-select: none;
+   -moz-user-select: none;
+   -ms-user-select: none;
+   user-select: none;
+}

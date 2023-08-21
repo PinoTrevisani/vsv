@@ -1,0 +1,155 @@
+// IE does not support classes
+
+//class UnsavedChangesNotificationConfiguration {
+//	constructor () {
+//		this._globalAllSubmitted = true;
+//		this._mapSubmittedStatus = []; // {form: form, submitted: false}[]
+//		this._mode = "blacklist";
+//		this._whitelistIDs = [];
+//		this._blacklistIDs = ["searchInputText"];
+//	}
+//	
+//	set globalAllSubmitted(param) {
+//		this._globalAllSubmitted = param;
+//	}
+//	
+//	set mapSubmittedStatus(param) {
+//		this._mapSubmittedStatus = param;
+//	}
+//	
+//	set mode(param) {
+//		this._mode = param;
+//	}
+//	
+//	set whitelistIDs(param) {
+//		this._whitelistIDs = param;
+//	}
+//	
+//	set blacklistIDs(param) {
+//		this._blacklistIDs = param;
+//	}
+//	
+//	get globalAllSubmitted() {
+//		return this._globalAllSubmitted;
+//	} 
+//	
+//	get mapSubmittedStatus() {
+//		return this._mapSubmittedStatus;
+//	}
+//	
+//	get mode() {
+//		return this._mode;
+//	}
+//	
+//	get whitelistIDs() {
+//		return this._whitelistIDs;
+//	}
+//	
+//	get blacklistIDs() {
+//		return this._blacklistIDs;
+//	}
+//}
+
+// var ucn_configuration_object = new UnsavedChangesNotificationConfiguration();
+var ucn_configuration_object = {
+	globalAllSubmitted: true,
+	mapSubmittedStatus: [], // {form: form, submitted: false}[]
+	mode: "blacklist",
+	whitelistIDs: [],
+	blacklistIDs: ["searchInputText"]
+};
+
+$( document ).ready(function(event) {
+	// ucn_configuration_object = new UnsavedChangesNotificationConfiguration();
+	ucn_configuration_object = {
+		globalAllSubmitted: true,
+		mapSubmittedStatus: [], // {form: form, submitted: false}[]
+		mode: "blacklist",
+		whitelistIDs: [],
+		blacklistIDs: ["searchInputText"]
+	};
+	var formsOnCurrentPage = $('.unsavedChangesNotification form');
+	setConfirmUnload(false);
+	
+	formsOnCurrentPage.toArray().forEach(function(form) {
+	//for (var form of formsOnCurrentPage.toArray()) {
+		ucn_configuration_object.mapSubmittedStatus.push({ form: form, submitted: true });
+		$(form).on('submit', function() {
+			setSubmittedStatus(form, true);
+			ucn_configuration_object.mapSubmittedStatus.forEach(function(entry) {
+				if (!entry.submitted) {
+					ucn_configuration_object.globalAllSubmitted = false;
+				}
+			});
+			// IE does not know for...of
+			// for (var entry of ucn_configuration_object.mapSubmittedStatus) {
+				// if (!entry.submitted) {
+					// ucn_configuration_object.globalAllSubmitted = false;
+					// break;
+				// }
+			// }
+			if (ucn_configuration_object.globalAllSubmitted) {
+				setConfirmUnload(false);
+			}
+		});
+
+		var elems = $(form).find('input', 'textarea').filter(":not(:hidden)");
+		elems.filter(function(i) {
+			var idIsOnWhiteList = false;
+			if (ucn_configuration_object.mode === "whitelist") {
+				ucn_configuration_object.whitelistIDs.forEach(function(x) {
+					if (x === elems.get(i).id) {
+						idIsOnWhiteList = true;
+					}
+				});
+				// IE does not know for...of
+				//for (var x of ucn_configuration_object.whitelistIDs) {
+					//if (x === elems.get(i).id) {
+						//idIsOnWhiteList = true;
+						//break;
+					//}
+				//}
+			}
+			var idIsOnBlackList = false;
+			if (ucn_configuration_object.mode === "blacklist") {
+				ucn_configuration_object.blacklistIDs.forEach(function(y) {
+					if (y === elems.get(i).id) {
+						idIsOnBlackList = true;
+					}
+				});
+				// IE does not know for...of
+				//for (var y of ucn_configuration_object.blacklistIDs) {
+					//if (y === elems.get(i).id) {
+						//idIsOnBlackList = true;
+						//break;
+					//}
+				//}
+			}
+			return ((!idIsOnBlackList && ucn_configuration_object.mode === 'blacklist') || (idIsOnWhiteList && ucn_configuration_object.mode === 'whitelist'));
+		}).on('change', function() {
+			setSubmittedStatus(form, false);
+			setConfirmUnload(true);
+		})
+	//}
+	});
+});
+
+function setSubmittedStatus(form, submitted) {
+	ucn_configuration_object.mapSubmittedStatus.forEach(function(x) {
+		if (x.form == form) {
+			x.submitted = submitted;
+		}
+	});
+	// IE does not know for...of
+	//for (var x of ucn_configuration_object.mapSubmittedStatus) {
+		//if (x.form == form) {
+			//x.submitted = submitted;
+			//break;
+		//}
+	//}
+}
+
+function setConfirmUnload(on) {
+	var message = "Sie haben ungespeicherte Änderungen, möchten Sie diese Seite trotzdem verlassen ?";
+	window.onbeforeunload = (on) ? function() { return message; } : null;
+}

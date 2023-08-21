@@ -1,0 +1,143 @@
+let imgNext = "diff-next.gif";
+let imgPrevious = "diff-previous.gif";
+let titleNext = "Zur nächsten Markierung springen";
+let titlePrevious = "Zur vorherigen Markierung springen";
+
+function versionCompareAjaxEvent(data) {
+	if (data.status == 'success') {
+		changeDaisyDiffTags();
+	}
+	$(window).trigger('resize');
+}
+
+function changeDaisyDiffTags() {
+	let jqSelection = $("span[changeid]");
+	jqSelection.each(function(index, element){
+		$(element).removeAttr("onclick");
+	});
+	addVersionCompareElementNavigationButtons(jqSelection);
+}
+
+function addVersionCompareElementNavigationButton(href, img, title, ele, position){
+	if ((position != null) && (href != null) && (img != null) && (title != null) && (ele != null) && (imagePath != null)) { // imagePath originates from diff.js
+		let jqObj = $("<a tabindex='0' class='diffpage-html-a' href='#" + href + "' onclick='console.log(event); scrollToEvent(event); return false;'><img class='diff-icon' src='" + imagePath + img + "' title='" + title +"'/></a>");
+		switch(position) {
+			case 'before': {
+				jqObj.insertBefore(ele);
+				break;
+			}
+			case 'after': {
+				jqObj.insertAfter(ele);
+				break;
+			}
+		}
+	}
+}
+
+
+$(document).on('click', 'a.diffpage-html-a', function(event) {
+	scrollToEvent(event);
+	console.log(event);
+	return false;
+});
+
+function addVersionCompareElementNavigationButtons(jqSelection) {
+	let length = jqSelection.length;
+	if (length > 0) {
+		var lastIntactIDIndex = null;
+		for (let i= 0; i < length; i++){
+			let hasLast = i > 0;
+			let hasNext = i < length-1;
+			let jqObj = $(jqSelection.get(i));
+			
+			// Check if element has visible changes. 
+			// If changes are not visible like changes on a parent elements class, we do not want to display the difference.
+			// Hence we do not add the navigation buttons on these differences.
+			// Daisy-Diff adds a changes attribute to these kind of differences like:
+			// changes="<ul class='changelist'><li>Moved out of a <b>division</b> with class <br/>absatz-text-aufhebung.</li><li>Moved to a <b>division</b> with class absatz.text.</li></ul>"
+			// These differences do not contain any visible text.
+			
+			if (selectionHasAdditionalChildNodesWithNonWhitespaceContent(jqObj, 'sr-only')) {
+				if(hasLast && lastIntactIDIndex != null){
+					let last = $(jqSelection.get(lastIntactIDIndex));
+					if (jqObj.attr('changeid') != last.attr('changeid')){
+						let idPrevious = last.attr('changeid');
+						addVersionCompareElementNavigationButton(idPrevious, imgPrevious, titlePrevious, jqObj, 'before');
+					}
+				}
+				lastIntactIDIndex = i;
+				if (hasNext){
+					var deltaFromCurrentIndexToMaxLength = (length-i);
+					for (var differenceToNextValidID = 1; differenceToNextValidID < deltaFromCurrentIndexToMaxLength; differenceToNextValidID++) {
+						let next = $(jqSelection.get(i+differenceToNextValidID));
+						if (selectionHasAdditionalChildNodesWithNonWhitespaceContent(next, 'sr-only')) {
+							if (jqObj.attr('changeid') != next.attr('changeid')){
+								let idNext = next.attr('changeid');
+								addVersionCompareElementNavigationButton(idNext, imgNext, titleNext, jqObj, 'after');
+								
+							}
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+
+function selectionHasAdditionalChildNodesWithNonWhitespaceContent(jqObj, objClass) {
+	var countClassMatches = jqObj.children('.'+objClass).length;
+	var countContentNodes = jqObj.contents().length;
+	if (countContentNodes > countClassMatches) {
+		for (var i = 0; i < countContentNodes; i++) {
+			var node = jqObj.contents().get(i);
+			if (!$(node).hasClass('sr-only')) {
+				if (!isTextNodeAndOnlyContainsWhitespaces(node)){
+					return true;
+					// also is true when node type is not text (like comment)
+				}
+			}
+		}
+	}
+	return false;
+}
+
+/*
+ * checks if a node is of type text and the text only contains whitespaces or html-entity representations of whitespaces
+ * returns false if it contains anything else
+ * */
+function isTextNodeAndOnlyContainsWhitespaces(node) {
+	if (node.nodeType == Node.TEXT_NODE) {
+		var str = $(node).text();
+		
+		var nonWhitespaceRegex = new RegExp("\\S+");
+		var htmlEntityRegex = new RegExp("\\&[#a-zA-Z]+;");	
+			
+		var nonWhitespaceMatches = str.match(nonWhitespaceRegex);
+	
+		if (nonWhitespaceMatches != null && nonWhitespaceMatches.length > 0) {
+			for (var i = 0; i < nonWhitespaceMatches.length; i++){
+				if (!(htmlEntityRegex.test(nonWhitespaceMatches[i]) && isWhitespaceHtmlEntity(nonWhitespaceMatches[i]))) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+/*
+ * checks if the string is a non visible (whitespace) HTML 5 entity 
+ * see https://dev.w3.org/html5/html-author/charref
+ * */
+function isWhitespaceHtmlEntity (str) {
+	var whitespaceHtmlEntities = ['&Tab;', '&#x00009;', '&#9;', '&NewLine;', '&#x0000A;', '&#10;' , '&nbsp;' , '&NonBreakingSpace;', '&#x000A0;', '&#160;', '&shy;', '&#x000AD;', '&#173;', '&ensp;', '&#x02002;', '&#8194;', '&emsp;', '&#x02003;', '&#8195;', '&emsp13;', '&#x02004;', '&#8196;', '&emsp14;', '&#x02005;', '&#8197;', '&numsp;', '&#x02007;', '&#8199;', '&puncsp;', '&#x02008;', '&#8200;', '&thinsp;' , '&ThinSpace;', '&#x02009;', '&#8201;', '&hairsp;', '&VeryThinSpace;', '&#x0200A;', '&#8202;', '&ZeroWidthSpace;', '&NegativeVeryThinSpace;', '&NegativeThinSpace;', '&NegativeMediumSpace;', '&NegativeThickSpace;', '&#x0200B;', '&#8203;', '&zwnj;', '&#x0200C;', '&#8204;', '&zwj;', '&#x0200D;', '&#8205;', '&lrm;', '&#x0200E;', '&#8206;', '&rlm;', '&#x0200F;', '&#8207;', '&MediumSpace;', '&#x0205F;', '&#8287;', '&NoBreak;', '&#x02060;', '&#8288;', '&ApplyFunction;' , '&af;', '&#x02061;', '&#8289;', '&InvisibleTimes;' , '&it;', '&#x02062;', '&#8290;', '&InvisibleComma;' , '&ic;', '&#x02063;', '&#8291;'];
+	for (var i = 0; i < whitespaceHtmlEntities.length; i++) {
+		if (whitespaceHtmlEntities[i] == str) {
+			return true;
+		} 
+	}
+	return false;
+}

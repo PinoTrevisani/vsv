@@ -1,0 +1,22 @@
+class ModalComponent {
+	constructor(modalId, prepare, onShown, onConfirm, onHidden) {
+		this.modalId = modalId;
+		this.prepare = prepare;
+		this.onShown = onShown;
+		this.onConfirm = onConfirm;
+		this.onHidden = onHidden; 
+		
+		var modalComponent = this;
+		$(document).ready(function(){
+			modalComponent.init();
+		});
+	}
+	
+	init() {
+		let modal = $('#' + this.modalId);
+		modal.on('show.bs.modal', this.prepare);
+		modal.on('shown.bs.modal', this.onShown);
+		modal.find('[data-role="confirm"]').on('click', this.onConfirm);
+		modal.on('hidden.bs.modal', this.onHidden);
+	}
+}

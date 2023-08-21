@@ -1,0 +1,56 @@
+function ShiR4Config() {
+	this.extendedSearchInputId = "ext__text";
+	this.extendedSearchKeywordsId = "ext__keywords";
+	this.extendedSearchNoHitsWarning = "<span class='extSearchHint'>Hinweis: Diese Suche w&uuml;rde zu keinem Ergebnis f&uuml;hren.</span>";
+	this.extendedSearchNoHitsWarningClass = "extSearchHint";
+	this.extendedSearchMaxSelected = 20;
+	this.extendedSearchMaxSelectedMessage = "<span class='extSearchMaxSelectedMessage'>Maximale Anzahl der Auswahlm&ouml;glichkeiten wurde &uuml;berschritten.<br />Die Auswahl wurde korrigiert.</span>";
+	this.extendedSearchMaxSelectedMessageClass = "extSearchMaxSelectedMessage";
+	this.keywordHrefTargetPage = "document.jsf";
+	this.collapserStateSaveExpireDays = 7;
+	this.keywordTabName = "keywordsTab";
+	this.useHighlighting = true;
+	this.highlightColor = "#FFCA49";
+	this.loadOnScrollContainerId = "loadOnScrollContainer";
+	this.pointerId = "#pointerContainer";
+	this.losdefaultheight = "500px";
+	this.bootstrapCols = 12;
+	this.documentTargetPage = "/document.jsf";
+	this.defaultSlideinState = "close";
+	this.contextMenueId="contextMenu";
+	this.losTimeOut = 2500;
+	this.printer_titleCls=".maintitle_hidden";
+	this.losPartsBefore=0;
+	this.losPartsAfter=0;
+	this.losMaxTries=3;
+	this.customLosOffset=24;
+	this.customLosOffsetUnit="px";
+	this.losUpdateHistory=false;
+	this.losUpdateHistoryTimeout=2000;
+	this.losOffsetMode='';// valid values are: 'L', 'P' or 'LP' and 'PL' (Los and Pointer)
+	this.docpHintEnabled=true;
+	this.documentPrefix="docs/";
+	this.documentSuffix=".html";
+	this.includeScrollelePosition=true;
+	this.textmarkerContainerSubSelector=null;
+	this.tree = {
+		update_nonvisible_trees: [],
+		/**
+		 *	You can add customized link-targets to the tree by adding a new group here.
+		 * 	Groups should be defined as {'template' : 'hitlist.jsf?alias={alias}'}.
+		 *	Every placeholder that is defined with curly brackets will be replaced with the corresponding HTML-attribute.
+		 *	Example: {alias} will be replaced with the closest alias-Attribute in DOM.
+		 *	Groups can be referenced in tree-templates by their index with the custom-HTML-attribute "lg"
+		 *  Example: <div title="exampleNode" alias="example" lg="0">...</div>
+		 **/
+		linkGroups : []
+	};
+	this.highlight = {
+		loopHighlighting: false	
+	};
+	this.los = {
+		selectorStart: ".loadonscroll[data-alias='",
+		selectorEnd: "']",
+		scrollToAnchorContainer: true
+	};
+}

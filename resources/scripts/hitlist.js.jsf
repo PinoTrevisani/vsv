@@ -1,0 +1,11 @@
+function checkAssignedMarkers(ele) {
+	let form = $(ele).closest('form');
+	let notesFqInput = $(form).find('[name="notesFq"]');
+	let button =  $(form).find(".renderHitlist");
+	if ($(ele).is(':checked')) {
+		notesFqInput.val('restore_state:3 OR restore_state:4');
+	} else {
+		notesFqInput.val('');
+	}	
+	button.click();
+}

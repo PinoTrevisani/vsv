@@ -1,0 +1,179 @@
+var _docID = null;
+var _docAction = null;
+shiR4config.contextMenueId="#slideIns";
+
+$(function() {
+	$('[data-toggle="sidebar-popover"]').popover({
+		html       : true,
+		sanitize   : false,
+		customClass: 'sidebar-popover',
+		animation  : false,
+		trigger    : 'click',
+		content    : function() {
+			if($(this).attr('data-popover-id')){
+				return $('#' + $(this).attr("data-popover-id")).html();
+			} else if($(this).attr('data-popover-query')) {
+				return $($(this).attr("data-popover-query")).first().html();
+			}
+		}
+	});
+});
+
+function refreshPopoverAfterAjax(data, popoverId) {
+	if (data.status != "success") {
+		return;
+	}
+	
+	$('[data-popover-id="' + popoverId + '"]').popover('hide').popover('show');
+}
+
+$(document).ready(function(){
+	$(document).on('click', function(e){
+		$('[data-toggle="sidebar-popover"],[data-id$=Popover], [data-id$=popover], [data-id$=Popover] a, [data-id$=popover] a').each(function () {
+			if (isUserInputEvent(e)){
+				if (!$(this).is(e.target) && $(this).has(e.target).length <= 0) {
+					var that = this 
+					setTimeout(function(){$(that).popover('hide');}, 250);
+			    }				
+			}
+		});
+	});
+});
+
+/**
+ * 
+ * @param action which action should be open and which a tag called this function
+ * @param src is only required for note/mark handling
+ * @returns
+ */
+function docAction(action, src) {
+	src = src == null ? null : src;
+	switch (action) {
+	case "print-instant":
+		__handlePrintInstant();
+		break;
+	case "print-add":
+	case "read-add":
+	case "read-remove":
+	case "note-show":
+	case "note-create":
+		__handleLinkDocAction(action);
+		break;
+	case "version-show":
+	case "version-compare":
+	case "favorite":
+	case "legal":
+		__handleFunctionDocAction(action);
+	default:
+	}
+}
+
+/**
+ *  trigger click to the h:commandLink for docAction
+ * @param action
+ * @returns
+ */
+function __handleLinkDocAction(action) {
+	fillSidebarForm("true","hide");
+	var ele = document.getElementById(action);
+	if (ele != null) {
+		ele.click();
+	} else {
+		$("#" + action).trigger("click");
+	}
+}
+
+/** */
+function __handlePrintInstant() {
+	var toRender = "true";
+	var closeIt = "hide"
+	var form = getSidebarForm();
+	$(form).find("[name=toRender]").val(toRender);
+	$(form).find("[name=postAction]").val(closeIt);
+	
+	// suche zuerst nach Dokumentversion, falls nicht vorhanden verfahre wie bisher
+	_docID = $(form).find("[name=docId]").val();
+	var version = $('#versionListLeft');
+	if ((version.length > 0) && (version.val() != null) && (version.val() != undefined) && (version.val() != '-')) {
+		$(form).find('[name=docId]').val(version.val());
+	}
+	var ele = $("#print-instant");
+	if (ele.length > 0) {
+		ele.trigger("click");
+	}
+	$(form).find('[name=docId]').val(_docID);
+}
+
+
+/**
+ * 
+ * @param action
+ * @returns
+ */
+function __handleFunctionDocAction(action) {
+	var camel = buildCamelCase(action);
+	submitSidebarForm(camel, "show");
+	_docAction=camel;
+}
+
+/**
+ * ajax function!
+ * will submit the ajax form
+ * @param toRender
+ * @param closeIt
+ * @returns
+ */
+function submitSidebarForm(toRender, closeIt) {
+	var form = getSidebarForm();
+	fillSidebarForm(toRender, closeIt);
+	$(form).find("[name=submit]").trigger("click");
+}
+
+/**
+ * getter
+ * @returns
+ */
+function getSidebarForm() {
+	return $("[id$=sidebarForm]");
+}
+
+/**
+ * fill into the form
+ * @param toRender
+ * @param closeIt
+ * @returns
+ */
+function fillSidebarForm(toRender, closeIt) {
+	closeIt = closeIt == null || closeIt === true ? "hide" : closeIt;
+	if (toRender == null) {
+		toRender = "true";
+		closeIt = "show";
+	}
+	var form = getSidebarForm();
+	$(form).find("[name=toRender]").val(toRender);
+	$(form).find("[name=postAction]").val(closeIt);
+	_docID = $(form).find("[name=docId]").val();
+}
+
+$(window).on("document_changed", function(e) {
+	if(e.lastDocId !== e.docId){
+		updateNoteBtn(e.docId,e.alias);
+		$('#rerender-sidebar').click();
+	}
+});
+
+$(window).on("tree_changed", function(e) {
+  refreshBreadcrumb();
+});
+
+function updateNoteBtn(docId,alias){
+	var btn = $("#note-create, #print-instant");
+	for (var i = 0; i < btn.length; i++){
+		var href = $($(btn).get(i)).attr("href");
+		var temp = href;
+		href = replaceTerm(href,"docId",docId);
+		href = replaceTerm(href,"alias",alias);
+		$(btn.get(i)).attr("href",href);
+	}
+}
+

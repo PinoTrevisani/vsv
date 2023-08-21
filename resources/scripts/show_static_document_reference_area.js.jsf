@@ -1,0 +1,21 @@
+var document_content_selector = '.content div.semantiktyp-quelle';
+var document_content = $(document_content_selector).get();
+var paste_area_selector = 'div#staticDocumentReferenceArea';
+var paste_area = $(paste_area_selector).get();
+var max_paste_area_height = 400;
+
+$(document).ready(function(e) {
+  if ($(document_content_selector).get().length > 0 && $(paste_area_selector).get().length > 0) {
+    if ($(document_content_selector).height()*3 > max_paste_area_height) {
+      $(paste_area_selector).height(max_paste_area_height);
+    } else {
+      $(paste_area_selector).height($(document_content_selector).height()*3);
+    }
+    $(paste_area_selector).append('<div class="pt-30">');
+    $(paste_area_selector).append($(document_content_selector))
+    $(paste_area_selector).append('</div>');
+    $(window).trigger('resize');
+  }
+});
+
+

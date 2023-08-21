@@ -1,0 +1,26 @@
+function outlookJS(OLid, doAjax){
+	var outlookID = OLid
+	var ajax = doAjax;
+	
+	this.swTab = function(tabID){
+		if(ajax){
+			//switches the Tab with Ajax
+			
+		}else{
+			//switches the Tabs without Ajax
+			$('#' + outlookID + '_input').val(tabID);
+			$('#' + outlookID + '_form').submit();
+		}
+	};
+}
+
+function submitJS() {
+}
+
+/**
+ * remove viewState tag of current form before submitted
+ * @author ns
+ */
+submitJS.onSubmitBtnClick = function(btn) {
+	$(btn).closest("form").find("input[id^='javax.faces.ViewState']").remove();
+}

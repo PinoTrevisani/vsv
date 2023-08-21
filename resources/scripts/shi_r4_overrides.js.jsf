@@ -1,0 +1,16 @@
+
+shiR4config.highlightColor = "#998400";
+shiR4config.losviewport = "#mainmiddle";
+shiR4config.documentTargetPage = "/workbench.jsf";
+shiR4config.losPartsBefore=2;
+shiR4config.losOffsetMode='P';
+shiR4config.customLosOffset=-48;
+shiR4config.textmarkerContainerSubSelector='.losContent';
+
+shiR4config.los.selectorStart = ".loadonscroll:has(>a[data-alias='";
+shiR4config.los.selectorEnd   = "'])";
+shiR4config.tree.update_nonvisible_trees = ['treeForm\\:tree\\:treeSpan'];
+shiR4config.tree.linkGroups.push({'template' : 'hitlist.jsf?fq=level{data-level}:{data-alias}&alias={data-alias}&notesFq=&start=&event=search*'}); // search
+shiR4config.tree.linkGroups.push({'template' : './workbench.jsf?event=navigation&alias={data-alias}&docId={data-docId}'}); // normal document
+shiR4config.tree.linkGroups.push({'template' : './myprofile.jsf?docId=&alias={data-alias}&anchor='}); // my profile
+shiR4config.tree.linkGroups.push({'template' : './workbench.jsf?event=navigation&alias={data-docid}'}); // favorites

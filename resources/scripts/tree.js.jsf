@@ -1,0 +1,590 @@
+var lastNewStates=null;
+/**
+ * cl 		=
+ * tnc  	= 
+ * tnp 	= 
+ * 
+ */
+function SHIR4Tree(treeParentId, isCompact, isDynToc) {
+	"use strict";
+	var that = this;
+	var treeComponentId = treeParentId.replace(/(.*):.*/, "$1").replace(/(:|\.|\[|\])/g, "\\$1");
+	var onAjaxCallCompleteCallback = function(){that.setTitleOnCheckedStatus()};
+	var firstChange = true;
+	var currentSendNodeId=null;
+	
+	treeParentId = treeParentId.replace(/(:|\.|\[|\])/g, "\\$1");
+	
+	if(isCompact == null || isCompact == undefined) {
+		isCompact = false;
+	}
+	
+	$(document).ready(function(){
+		that.scrollToCurrentAlias();
+		that.initHandlers();
+		that.setTitleOnCheckedStatus();
+	});
+	
+	// TODO: move this code inside init function
+	
+	if(isDynToc){
+		$(window)
+			.off('document_changed.tree')  // as of now, unbind does not work in FF!
+			.on("document_changed.tree", function(e) {		
+				var render=true;
+				// is tree visible and is in my scope?
+				if (shiR4config.tree.update_nonvisible_trees.indexOf(treeParentId) === -1){
+					if(!$("#" + treeParentId).is(':visible')){
+						if(window['_treeScope'] != null){
+							if(_treeScope.indexOf(treeParentId) < 0 ){
+								render = false;
+							}
+						} else {
+							render = false;
+						}
+					}
+				}
+				if (render) {
+					that.gotoAlias(e.alias, "", e.docId);
+				}
+  			var event = $.Event("tree_changed");
+  			$(window).trigger(event);
+			}
+		);
+	}
+	
+  that.scrollToCurrentAlias = function() {
+    var treeNodeAnchor = document.getElementById("currentTreeNode");
+    if (treeNodeAnchor != null) {
+      treeNodeAnchor.scrollIntoView({
+         behavior: 'auto',
+         block: 'center',
+         inline: 'center'
+      });
+    }
+  }
+	
+	that.initHandlers = function() {
+		that.initClickHandlers();
+		
+	}
+	
+	// intentionally delegating here to avoid the necessity to
+	// apply handlers to newly loaded elements
+	// 
+	// At first, remove ANY possibly attached click handler to
+	// prevent multiple click handler execution
+	that.initClickHandlers = function(){
+		var $document = $(document);
+		
+		$document
+			.off('mouseup keyup', '.js-ti-toggle')
+			.on('mouseup keyup', '.js-ti-toggle', function(event) {
+				if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+					event.stopPropagation(); 
+					that.toggleNode(event.target);
+				}
+			})
+			.on('mouseup keyup', '#' + treeParentId + ' .tc > a', function(event) {
+				if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+					var node = $(event.target).closest('a');
+					var linkgroup = $(node).attr('lg');
+					if(linkgroup){
+						var linkConfig = shiR4config.tree.linkGroups[parseInt(linkgroup)];
+						var linkTarget = linkConfig.template;
+						var placeholderRegex = /\{(.*?)\}/;
+						var placeholder = placeholderRegex.exec(linkTarget);
+						while(placeholder){
+							while (linkTarget.indexOf(placeholder[0]) >= 0) {
+								linkTarget = linkTarget.replace('{' + placeholder[1] +'}', $(node).closest('['+placeholder[1]+']').attr(placeholder[1]));
+							}
+							placeholder = placeholderRegex.exec(linkTarget);
+						}
+						var alias = $(node).closest('[data-alias]').attr('data-alias');
+						var docId = $(node).closest('[data-docid]').attr('data-docid');
+						if(checkNavNode(docId, alias, null)){
+							event.stopPropagation();
+							window.location.href = linkTarget;
+						}
+					} else {
+						var alias = $(node).closest('[data-alias]').attr('data-alias');
+						var docId = $(node).closest('[data-docid]').attr('data-docid');
+						if(checkNavNode(docId, alias, null)){
+							event.stopPropagation();
+							L.doLink(alias, docId);
+						}
+					}
+				}
+			})
+	.on('mouseup keyup', '#' + treeParentId + ' a.del', function(event) {
+		if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+          dd(event.target);
+        }
+      })
+      .on('mouseup keyup', '#' + treeParentId + ' a.ed', function(event) {
+    	  if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+    		  ed(event.target);
+    	  }
+      })
+      .on('mouseup keyup', '#' + treeParentId + ' a.mu', function(event) {
+    	 if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+    		 mu(event.target);
+    	 }
+      })
+      .on('mouseup keyup', '#' + treeParentId + ' a.md', function(event) {
+    	  if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+    		  md(event.target);
+    	  }
+      })
+      .on('mouseup keyup', '[data-alias][data-title][tabindex].treeCheckbox', function(e){
+    	  if(event && ((event.type == 'mouseup' && event.which == 1) || (event.type == "keyup" && event.key == 'Enter'))){
+    		  var alias = $(e.target).attr('data-alias');
+    		  that.toggleChecked(alias);
+    		  $("#refreshPrintTreeBtn").click();
+    	  }  
+      });
+	}
+	
+	that.setTitleOnCheckedStatus = function() {
+		var list = $('a.treeCheckbox.CHECKED, a.treeCheckbox.UNCHECKED, a.treeCheckbox.PARTIALCHECKED');
+		list.each(function(index, element){
+			var ele = $(element);
+			var hasChildren = ele.attr('data-haschildren') == 'true' ? true : false;
+			var title = ele.attr('data-title');
+			if (ele.hasClass('CHECKED')) {
+				if (hasChildren) {
+					ele.attr('title', 'Alle Dokumente abwählen in: '+title);
+				} else {
+					ele.attr('title', 'Dokument abwählen: '+title);
+				}
+			} else if (ele.hasClass('PARTIALCHECKED')) {
+				ele.attr('title', 'Alle weiteren Dokumente auswählen in: '+title);
+			} else if (ele.hasClass('UNCHECKED')) {
+				if (hasChildren) {
+					ele.attr('title', 'Alle Dokumente auswählen in: '+title);
+				} else {
+					ele.attr('title', 'Dokument auswählen: '+title);
+				}
+			}
+		});
+	}
+	
+	
+	
+	
+	// End of event delegation
+
+	that.onGetTreeSubNodeFoldIn = function(nodeId, link, doAjax) {
+		var tnc = $("#" + treeParentId).find("#" + nodeId);
+		tnc.removeClass("expanded");
+		tnc.siblings().remove();
+
+		doCompactHandling(true, nodeId);
+		
+		if(isCompact){
+			that.treeNodeOpen(tnc.parent().siblings(".expanded").first().attr("id"));
+		}
+		
+		if (doAjax) {
+			that.doAjaxCall([ {
+				name : 'methodName',
+				value : 'collapseNode'
+			}, {
+				name : 'nodeId',
+				value : nodeId
+			} ]);
+		}
+	};
+
+	this.treeNodeOpen = function(nodeId, link, callback) {
+		var tno, tnp, addParam = null;
+		if (link == null || link == undefined) {
+			tno = $("[alias='" + nodeId + "']");
+		}
+		displayChildren(nodeId);
+		
+		if (tno.attr('cl') != '1') {
+			this.doAjaxCall([ {
+				name : 'methodName',
+				value : 'getSubNodes'
+			}, {
+				name : 'nodeId',
+				value : nodeId
+			}, {
+				name : 'addParam',
+				value : addParam
+			} ], callback);
+			return;
+		}
+		
+		if(typeof(callback) == "function") {
+			callback();
+		}
+		$(window).trigger("tree_loaded");
+
+	};
+	
+	this.toggleNode = function(node){
+		var jqObj = $(node);
+		var treeEntry = jqObj.closest(".te");
+		var alias = jqObj.closest('[data-alias]').attr('data-alias');
+		var title = jqObj.closest('[data-title]').attr('data-title');
+		var jsToggle = jqObj.hasClass('js-ti-toggle');
+		var expanded = treeEntry.hasClass("expanded");
+		if (alias) {
+			if(expanded){
+				that.onGetTreeSubNodeFoldIn(alias, node);
+			} else {
+				that.treeNodeOpen(alias);
+			}
+			if (jsToggle && expanded) {
+				if (title) {
+					jqObj.attr('title', 'Ast öffnen: ' + title);
+				}
+			} else if (jsToggle && !expanded) {
+				if (title) {
+					jqObj.attr('title', 'Ast schließen: ' + title);
+				}
+			}
+		}
+	}
+	
+	that.toggleChecked = function(nodeId) {
+		
+		// Shows "in Progress" text if checkbox is toggled
+		showWaitDialogue();
+
+		var currentDocId = getUrlParam('docId');
+		
+		that.doAjaxCall([ {
+			name : 'methodName',
+			value : 'toggleChecked'
+		}, {
+			name : 'nodeId',
+			value : nodeId
+		}, {
+			name : 'docId',
+			value : currentDocId
+		} ]);
+	};
+
+	that.check = function(nodeId) {
+		
+		// Shows "in Progress" text if checkbox is toggled
+		showWaitDialogue();
+		
+		that.doAjaxCall([ {
+			name : 'methodName',
+			value : 'check'
+		}, {
+			name : 'nodeId',
+			value : nodeId
+		} ]);
+	}
+	
+	that.uncheck = function(nodeId) {
+		// Shows "in Progress" text if checkbox is toggled
+		showWaitDialogue();
+		
+		that.doAjaxCall([ {
+			name : 'methodName',
+			value : 'uncheck'
+		}, {
+			name : 'nodeId',
+			value : nodeId
+		} ]);
+	}
+
+	that.uncheckSingleNodeId = function(nodeId) {
+		
+		// Shows "in Progress" text if checkbox is toggled
+		showWaitDialogue();
+		
+		that.doAjaxCall([ {
+			name : 'methodName',
+			value : 'uncheckSingleNodeId'
+		}, {
+			name : 'nodeId',
+			value : nodeId
+		} ]);
+	}
+	
+	that.resetCheckedStates = function() {
+		that.doAjaxCall([ {
+			name : 'methodName',
+			value : 'resetCheckedStates'
+		} ]);
+	}
+
+	that.doAjaxCall = function(params, callback) {
+		if (params == null || params == undefined) {
+			return;
+		}
+		
+		var remoteCommandSpan = getRemoteCommandSpan();
+		var hiddenInputs = remoteCommandSpan.find(".hiddenInputs");
+		
+		hiddenInputs.empty();
+		
+		for (var i = 0; i < params.length; i++) {
+			hiddenInputs.append("<input type=\"hidden\" name=\""
+					+ params[i].name + "\" value=\"" + params[i].value
+					+ "\" />");
+		}
+		currentSendNodeId=$(hiddenInputs).find("[name=nodeId]").val();
+		hiddenInputs.append("<input type=\"hidden\" name=\"callback\" value=\""
+				+ remoteCommandSpan.attr("treeObjectName")
+				+ ".onAjaxCallComplete\" />");
+		// trigger works in IE8 better than .click()
+		if(callback != undefined) {
+			onAjaxCallCompleteCallback = callback;
+		}
+		remoteCommandSpan.find(".ajaxCallButton").trigger('click'); 
+	}
+
+	that.onAjaxCallComplete = function(args) {
+		var callback = onAjaxCallCompleteCallback;
+		// onAjaxCallCompleteCallback = null;
+		
+		if (args.methodName == "getSubNodes") {
+			onGetTreeSubNodeComplete(args, callback);
+		} else if (args.methodName == "toggleChecked"
+				|| args.methodName == "uncheck" || args.methodName == "uncheckSingleNodeId") {
+			onCheckOperationComplete(args);
+		} else if (args.methodName == "resetCheckedStates") {
+			refreshTree(args);
+		}
+	};
+
+	function refreshTree(args) {
+		if(args.nodeId !== currentSendNodeId){
+			return;
+		}
+		if (args.tree != null && args.tree != undefined && args.tree != "") {
+			$("#" + treeParentId).html(args.tree);
+    		$(window).trigger("tree_changed");
+		}
+	}
+
+	function onGetTreeSubNodeComplete(args, callback) {
+		var tno;
+		
+		if (args.addParam == null || args.addParam == undefined
+				|| args.addParam == "") {
+			tno = $("#" + treeParentId).find("#" + args.nodeId);
+		}
+
+		//tno.attr('cl', '1');
+		if(isCompact) {
+			$("#" + treeParentId).find("#" + args.nodeId).siblings().remove();
+		}
+		tno.addClass("expanded");
+		tno.parent().children().not(tno).remove();
+		tno.parent().append(args.childrenHtml);
+		displayChildren(args.nodeId);
+		doCompactHandling(false, args.nodeId);
+		
+		if(typeof(callback) == "function") {
+			callback();
+		}
+	}
+
+	// TODO: maybe this should be part of com.boorberg.solrbrowser as it relies on the templates which are specific to boorberg
+	function onCheckOperationComplete(args) {
+		
+		// Hides the "in Progress" text, when documents are completely added to
+		// selection
+		hideWaitDialogue();
+		
+		var toggledNodeId = args.nodeId;
+		var newCheckedStates = null;
+		lastNewStates=args.newCheckedStates;
+		if ("object" === typeof (args.newCheckedStates)) {
+			newCheckedStates = args.newCheckedStates;
+		} else {
+			newCheckedStates = JSON.parse(args.newCheckedStates);
+		}
+		// update checkedState of toggled node itself and all parents according
+		// to newCheckedStates (a map nodeid => checkedstate)
+		for ( var nodeId in newCheckedStates) {
+			// update twice: closed and opened node div
+			// var img = $("#" + treeParentId + " #checkbox_img_open_" + nodeId);
+			// setCheckedStateImg(img, newCheckedStates[nodeId]);
+			// img = $("#" + treeParentId + " #checkbox_img_close_" + nodeId); // nodeid == %ALIAS%
+			// setCheckedStateImg(img, newCheckedStates[nodeId]);
+			
+			var targetNode = $("#" + treeParentId + " [data-alias='" + nodeId + "']");
+			targetNode.removeClass("CHECKED UNCHECKED PARTIALCHECKED");
+			targetNode.addClass(newCheckedStates[nodeId]);
+		}
+
+		// check/uncheck all children
+		// selector: all elements with class "treeCheckbox" that are children of
+		// "closespan_" + nodeId are the child-checkboxes of toggled node
+		$("#" + treeParentId + " [data-alias='" + toggledNodeId + "']").closest(".treeCheckbox").each(function() {
+			setCheckedStateImg($(this), newCheckedStates[toggledNodeId]);
+		});
+		
+		$("#" + treeParentId + " [data-alias='" + toggledNodeId + "']").closest(".CHECKED,.UNCHECKED,.PARTIALCHECKED").each(function() {
+			var targetNode = $(this);
+			targetNode.removeClass("CHECKED UNCHECKED PARTIALCHECKED");
+			targetNode.addClass(newCheckedStates[toggledNodeId]);
+		});
+		
+		
+		if (args.newWriteOnce != null && args.newWriteOnce != undefined
+				&& args.newWriteOnce != "") {
+			$("#" + treeParentId + " .writeOnce").replaceWith(
+					args.newWriteOnce);
+		}
+		that.setTitleOnCheckedStatus();
+		$(window).trigger("tree_changed");
+	};
+
+	function setCheckedStateImg(img, checkedState) {
+		if (img == undefined || img.length < 1) {
+			return;
+		}
+		switch($(img).prop("tagName").toLowerCase()){
+			case "a":$(img).removeClass("UNCHECKED PARTIALCHECKED CHECKED").addClass(checkedState);
+				break;
+			default:
+				img.attr("src", img.attr("src").replace(/(.*\/).*(\..*)$/,"$1" + checkedState + "$2"));
+		}
+	}
+
+	function displayChildren(nodeId) {
+		doCompactHandling(false, nodeId);
+	};
+	
+	function doCompactHandling(isClose, nodeId) {
+		if(!isCompact) {
+			$(window).trigger("tree_loaded");
+			return;
+		}
+		
+		var tno = $("#" + nodeId);
+// var parentNodeId = tno.parent().parent().attr("nodeId");
+		if(isClose) {
+			tno.parent().siblings(":not(.expanded)").show();
+			that.scrollToAlias(nodeId);
+			$(window).trigger("tree_loaded");
+		} else {
+			tno.parent().siblings(":not(.expanded)").hide();
+			$(window).trigger("tree_loaded");
+		}
+	}
+
+	function getId(element) {
+		element = $(element);
+		var id = element.attr("id");
+		if (id == null || id == undefined || id == "") {
+			id = new Date().getTime();
+			element.attr("id", id);
+		}
+		return id;
+	}
+
+	function getRemoteCommandSpan() {
+		return $("#" + treeParentId).parent().find(".remoteCommand");
+	}
+	/**
+	 * callback for loaded documents (changed event callback)
+	 */
+	that.gotoAlias = function(alias,workingAlias, docId) {
+		
+		if(alias == null || alias == "") {
+			alias = workingAlias;
+//			return;
+		}
+		
+		// check if alias is already visible
+		var openLnk = $("#openlnk_" + alias);
+//		if(openLnk.length < 1) {
+			reloadTreeOnAlias(alias,workingAlias, docId);
+//			return;
+//		}
+		
+		// hidden node (loaded but hidden node like already loaded and closed
+		// via js)
+		var parent = openLnk.closest('[tnp="1"]');
+		if(parent.is(":hidden")) {
+			// traverse up the tree until next visible parent and open each single branch
+			reloadTreeOnAlias(alias,workingAlias, docId);
+			return;
+		}
+		
+		// find current node
+		var currentNodeAnchor = $("#currentTreeNode");
+		var currentAlias = currentNodeAnchor.next().attr("nodeId");
+		
+		// remove all current node markers/styles
+		currentNodeAnchor.remove();
+		$("#openlnk_"   + currentAlias).removeClass("active");
+		$("#closelnk_" + currentAlias).removeClass("active");
+		
+		// set new markers/styles
+		openLnk.parent().before("<a id=\"currentTreeNode\" nodeId=\"" + alias + "\"></a>");
+		openLnk.addClass("active");
+				
+		// check if new node has children
+		var closeLnk = $("#closelnk_" + alias);
+		if(closeLnk.length > 0) {
+			closeLnk.addClass("active");
+			that.treeNodeOpen(alias);
+		}
+		
+		that.scrollToCurrentAlias();
+		
+		// next cases:
+		// hidden node (parent's sibling)
+		// invisible node (child)
+		// invisible node (another branch)
+		
+		// TODO: inform server?
+	}
+	
+	function reloadTreeOnAlias(alias, workingAlias, docId) {
+		$("#" + treeParentId).parent().find("[name='alias']").val(alias);
+		if(workingAlias==null){
+			workingAlias="";
+		}
+		$("#" + treeParentId).parent().find("[name='workingAlias']").val(workingAlias);
+		$("#" + treeParentId).parent().find("[name='docId']").val(docId);
+		
+		$("#" + treeComponentId + "\\:reloadTree").click();
+	}
+	
+	that.tn = function() {
+		this.toggleNode();
+	}
+	
+	/*
+	that.toggleNode = function(p1, p2) {
+		console.log(p1);
+		console.log(p2);
+	}
+	*/
+	
+	
+	that.onTreeRefreshComplete = function(data) {
+	    var status = data.status; // Can be "begin", "complete" or "success".
+	    if(typeof(stackHandlerCallback)==="function" ){
+	    	stackHandlerCallback(data);
+	    }
+	    switch (status) {
+	        case "success": // After update of HTML DOM based on ajax response..
+	            // ...
+	        	that.scrollToCurrentAlias();
+	    		$(window).trigger("tree_loaded");
+	            break;
+	    }
+	}
+
+	that.scrollToAlias = function(alias) {
+		var ele = $("[nodeid='" + alias + "']").get(0);
+		if(ele != undefined) {
+			ele.scrollIntoView();
+		}
+	}
+}

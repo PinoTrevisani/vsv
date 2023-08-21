@@ -1,0 +1,313 @@
+var editForm = "#ownDocumentEditForm";
+var editContainer = "#mainmiddle";
+
+
+var fileextensions;
+var filesize;
+
+$(document).ready(function() {
+	var mode = $("[name=mode]");
+	if (0 < mode.length) {
+		mode.on("click", function(e) {
+			checkMode();
+		});
+		checkMode();
+	}
+	var fields = $(editForm).find("[name=parentAliasChain]");
+	var field = fields.length > 0 ? fields[0] : null;
+	if (null != field) {
+		var val = $(field).val();
+		if (null != val) {
+			$(editContainer).find("a[aliasChain='" + val + "']").click();
+		}
+	}
+	$("#document").on("change",function(e){
+		$("#errorMsg").hide();
+	});
+	var element = $("#editValidFile");
+	if(element.length>0){
+		fileextensions = element.attr("data-ext").split(",");
+		filesize = parseInt(element.attr("data-size"));
+	}
+});
+
+var fieldName = "keywordsFields";
+var counter = 0;
+
+function getIndex(target) {
+	var temp = parseInt(target.substring(fieldName.length));
+	if (isNaN(temp)) {
+		return 0;
+	} else {
+		return temp;
+	}
+}
+
+function getTemplate(index) {
+	var tmpl = $(".keywordsfieldTemplate").find(".dataTemplate").html();
+	return tmpl.replace(/%INDEX%/g, index);
+}
+
+function removeKeywordField(btn) {
+	var index = getIndex($(btn).attr("data-target"));
+	if (index > 0) {
+		$(".row[data-src='" + index + "']").remove();
+	} else {
+		$("#keywordsFields0").val('');
+	}
+}
+
+function addNewKeywordField(btn) {
+	counter++;
+	var tmpl = getTemplate(counter);
+	$(".keywordsfield").append(tmpl);
+}
+
+function selectNode(alias, dom) {
+	var fields = $(editForm).find("[name=parentAliasChain]");
+	var field = fields.length > 0 ? fields[0] : null;
+	if (null != field) {
+		$(field).val(alias);
+		$(editContainer).find("a.active").removeClass("active");
+		$(dom).addClass("active");
+		$(".folderTarget").text($(dom).text());
+	}
+}
+
+function checkMode() {
+	var value = $("[name=mode]:checked").val();
+	if ("editor" === value) {
+		$("#editPanelEditor").removeClass("d-none");
+		$("#editPanelDocument").addClass("d-none");		
+	} else if ("upload" === value) {
+		$("#editPanelDocument").removeClass("d-none");
+		$("#editPanelEditor").addClass("d-none");
+	}
+}
+
+function initKeywordField(){
+	counter = $("input[name='keywordsFields']").length;
+	addNewKeywordField(null);
+}
+
+function editFormEvent(data){
+	console.log(data);
+}
+
+function validateEditForm() {
+	var fehlerMeldung = '';
+	var validSubmit = true;
+	var emtyFields = false;
+	if ($("#titleField").val() == "") {
+		fehlerMeldung = fehlerMeldung + 'Dokumententitel';
+		validSubmit = false;
+		emtyFields = true;
+	}
+	if ($("#editForm input:checked").val() == "editor") {
+		if(CKEDITOR==null){
+			validSubmit=false;
+			fehlerMeldung = "Kann nicht validiert werden."
+		}
+		if (CKEDITOR.instances['documentContentField'].getData() == "") {
+			if (!validSubmit) {
+				fehlerMeldung = fehlerMeldung + ',';
+			}
+			fehlerMeldung = fehlerMeldung + ' Text verfassen';
+			validSubmit = false;
+			emtyFields = true;
+		}
+	} else if ($("input[name='edit_action']").val() == "create" && $("#editForm input:checked").val() == "upload") {
+		if ($("#document").val() == "") {
+			if (!validSubmit) {
+				fehlerMeldung = fehlerMeldung + ',';
+			}
+			fehlerMeldung = fehlerMeldung + ' Datei hochladen';
+			validSubmit = false;
+			emtyFields = true;
+		} else {
+			var input = document.getElementById("document");
+			var msg =isValidFile(input) ;
+			if(msg!=null){
+				fehlerMeldung = msg;
+				validSubmit = false;
+			}
+		}
+	}
+	if ($("input[name='parentAliasChain']").val() == "" && $("input[name='aliasChain']").val() == "") {
+		if (!validSubmit) {
+			fehlerMeldung = fehlerMeldung + ',';
+		}
+		fehlerMeldung = fehlerMeldung + ' Zielknoten';
+		validSubmit = false;
+		emtyFields = true;
+	}
+	if (!validSubmit) {
+		if (emtyFields) {
+			fehlerMeldung = fehlerMeldung + ' ist/sind leer.';
+		}
+		$('#errorMsg').html(fehlerMeldung).show("slide", {
+			"direction" : "up"
+		}, "slow", function() {
+			headerRerender();
+		});
+	}
+	if ($("input[name='keywordsFields']:last").val() == "") {
+		$("input[name='keywordsFields']:last").remove();
+	}
+
+	return validSubmit;
+}
+
+
+
+function deleteDocument(dom) {
+	var type = $(dom).attr("type");
+	if(!type){
+		type = $(dom).closest('[data-type]').attr('data-type');
+		}
+	var printing = "diesen Eintrag";
+	if ("editfolder" === type) {
+		printing = "diesen Ordner";
+	} else if ("edit" === type) {
+		printing = "dieses Dokument";
+	} else if ("editfavorite" === type) {
+		printing = "dieses Lesezeichen";
+	}
+	if (true === confirm("Sind Sie sicher, dass Sie " + printing + " entfernen wollen?")) {
+		$("#deleteForm").append('<input type="hidden" name="aliasChain" value="' + $(dom).closest('[data-aliaschain]').attr('data-aliaschain') + '"/>');
+		$("#deleteForm").append('<input type="hidden" name="title" value="' + $(dom).attr("title").replace("delete document ", "") + '"/>');
+		$("#deleteForm").append('<input type="hidden" name="event" value="edit"/>');
+		$("#deleteForm").append('<input type="hidden" name="edit_action" value="delete"/>');
+		if ("editfavorite" === type) {
+			$("#deleteForm").find(".submitfav").click();
+		} else {
+			$("#deleteForm").find(".submitdoc").click();
+		}
+	}
+	return false;
+}
+
+function handleDeleteForm(data) {
+	switch ($(data.source).attr("id")) {
+	case "deleteForm:ajaxBtn":
+	case "deleteForm:favAjaxBtn":
+		if (data.status === "begin") {
+			block();
+		}
+		if (data.status === "success") {
+			if (data.responseText.indexOf("error") > -1) {
+				updateBlocker();
+			} else {
+				unblock();
+				var txt = $("#deleteForm").find(".redirectTo").text();
+				if(txt==null || txt=="")
+					location.reload();
+				else 
+					location.href = txt;
+			}
+		} else if (data.status === "error") {
+			updateBlocker();
+		}
+	}
+}
+
+
+function prepareMoveForm() {
+	if ($("#moveForm").find("[name=direction]").length == 0) {
+		$("#moveForm").append('<input type="hidden" name="direction" value=""/>');
+	}
+	if ($("#moveForm").find("[name=event]").length == 0) {
+		$("#moveForm").append('<input type="hidden" name="event" value="edit"/>');
+	}
+	if ($("#moveForm").find("[name=edit_action]").length == 0) {
+		$("#moveForm").append('<input type="hidden" name="edit_action" value="move"/>');
+	}
+	if ($("#moveForm").find("[name=aliasChain]").length == 0) {
+		$("#moveForm").append('<input type="hidden" name="aliasChain" value=""/>');
+	}
+	if ($("#moveForm").find("[name=alias]").length == 0) {
+		$("#moveForm").append('<input type="hidden" name="alias" value=""/>');
+	}
+}
+
+function fillMoveForm(direction, alias, aliasChain) {
+	$("#moveForm").find("[name=alias]").val(alias);
+	$("#moveForm").find("[name=aliasChain]").val(aliasChain);
+	$("#moveForm").find("[name=direction]").val(direction);
+}
+
+function moveUp(dom) {
+	prepareMoveForm();
+	var aliasChain = $(dom).closest('[data-aliaschain]').attr('data-aliaschain');
+	var chain = aliasChain.split("/");
+	var alias = chain[chain.length - 1];
+	fillMoveForm("up", alias, aliasChain);
+	$("#moveForm").find(".submit").click();
+}
+
+function moveDown(dom) {
+	prepareMoveForm();
+	var aliasChain = $(dom).closest('[data-aliaschain]').attr('data-aliaschain');
+	var chain = aliasChain.split("/");
+	var alias = chain[chain.length - 1];
+	fillMoveForm("down", alias, aliasChain);
+	$("#moveForm").find(".submit").click();
+}
+
+
+function block() {
+	$("#badRock").modal({
+		keyboard : false,
+		backdrop : 'static'
+	});
+}
+
+function unblock() {
+	$("#badRock").modal("hide");
+}
+
+function updateBlocker() {
+	$("#badRock").find(".modal-footer").removeClass("waitIcon");
+	setTimeout(function() {
+		$("#badRock").modal("hide");
+	}, 5000);
+}
+
+function isValidFormat(format){
+	return -1<fileextensions.indexOf(format);
+}
+
+function isValidFileSize(size){
+	return size<filesize;
+}
+
+function isValidFile(input){
+    if (!input || !input.files || !input.files[0]) {
+        return "keine Datei ausgewählt.";
+    }else {
+        file = input.files[0];
+        var splits = file.name.split(".");
+        if(!isValidFormat(splits[splits.length-1])){
+        	return "Dateiformat ist nicht erlaubt!";
+        }else if(!isValidFileSize(file.size)){
+        	return "Dateigröße überschreitet die Vorgabe!";
+        }
+    }
+    return null;
+}
+
+function checkAllFavoriteImport() {
+	var checkBoxes = $('#favoriteImportExportForm\\:importCheckBoxes input');
+	var someNotChecked = false;
+	for (var i = 0; i < checkBoxes.length; i++) {
+		if (!$(checkBoxes[i]).prop('checked')) {
+			someNotChecked = true;
+			break;
+		}
+	}
+	if (someNotChecked) {
+		$(checkBoxes).prop('checked', true);
+	} else {
+		$(checkBoxes).prop('checked', false);
+	}
+}

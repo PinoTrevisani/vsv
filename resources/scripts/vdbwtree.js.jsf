@@ -1,0 +1,211 @@
+$(function() {
+
+	/**
+	 * class to hide various tree levels
+	 * 
+	 * @author nbe
+	 */
+    var hideLevel = (function() {
+    	
+    	// private variables
+    	// read in properties
+    	var objTreeMoveUpButton = $('#tree_move_up');
+		var intRootLevel = parseInt(objTreeMoveUpButton.attr("data-root-level"));
+		var intParentLevel = parseInt(objTreeMoveUpButton.attr("data-parent-level"));
+		var intLevel = parseInt(objTreeMoveUpButton.attr("data-level"));
+		var strLevelClass = '.treeItemChildren';
+		
+		// array to store allowed positions
+		var arrValidIndices = new Array();
+		var intPointer;
+		
+		// sets the values required for the hide level functionality
+		setBaseValues = function() {
+			objTreeMoveUpButton = $('#tree_move_up');
+			intRootLevel = parseInt(objTreeMoveUpButton.attr("data-root-level"));
+			intParentLevel = parseInt(objTreeMoveUpButton.attr("data-parent-level"));
+			intLevel = parseInt(objTreeMoveUpButton.attr("data-level"));
+			strLevelClass = '.treeItemChildren';
+			arrValidIndices = new Array();
+			intPointer = null;
+		}
+		
+		/**
+		 * handles the initial setup 
+		 */
+		init = function() {
+			var intExclude = intRootLevel;
+			
+			// populate the array with allowed positions, removing root levels 
+			$.each($(strLevelClass + ':lt('+ intLevel +')'), function( key, value ) {
+				if (intExclude <= 0) {
+					arrValidIndices.push(key);
+				}
+				intExclude--;
+			});
+			intPointer = arrValidIndices.length;
+			
+			// setting the initial pointer
+			$("#tree_nav_panel").attr("data-current", intPointer - intParentLevel);
+
+		}
+		
+		
+		
+		/**
+		 * method to hide the initially shown parents 
+		 */
+		hidePredefParents = function() {
+			for (var i = 0; i < (0 + intParentLevel); i++) {
+                var objElement = $(strLevelClass + ':eq('+ (intPointer - i) +')'); // TODO: :eq selector is deprecated
+                objElement.hide();
+                resetOffset(objElement.find('div:first')); // TODO: :first selector is deprecated
+            }
+
+		}
+		
+		/**
+		 * method to reset the offset of the initially shown parents
+		 */
+		resetOffset = function(objElement) {
+			removeColInfo(objElement);
+			objElement.addClass("col-xs-0");
+		}
+		
+		removeColInfo = function(objElement) {
+			objElement.attr('class', function(i,c){
+                return c.replace(/(^|\s)col-xs-\S+/g, '');
+            });
+		}
+		
+		/**
+		 * method to register the click event logic of the buttons 
+		 */
+        register = function() {
+        	
+        	// initial setup 
+        	init();
+    		
+    		if (intLevel > (intRootLevel + intParentLevel)) {
+    			
+    			// button up click event
+    			$('#mainleft').on("click","#tree_move_up",function(event) {
+				
+    				hidePredefParents();
+    				
+    				// fetching the current pointer and shift to 
+    				var intCurrentIndex = getCurrent();
+    				intCurrentIndex = intCurrentIndex - intParentLevel > 0 ? intCurrentIndex - intParentLevel : 0;
+    				
+    				var toShow = getParentIndices(intCurrentIndex);
+    				
+					insertAll(toShow);
+    				
+					setCurrent(intCurrentIndex);
+    				manageButtons(intCurrentIndex);
+
+    				event.stopImmediatePropagation();
+    			});
+    			
+    			// button down click event
+    			$("#treeForm").on("click","#tree_move_down", function(event) {
+    				
+    				var intCurrentIndex = getCurrent();
+    				var rightBorder = arrValidIndices.length;
+    				intCurrentIndex = (intCurrentIndex + (intParentLevel * 2)) < rightBorder ? intCurrentIndex + intParentLevel : rightBorder - intParentLevel;
+    				
+    				var toShow = getParentIndices(intCurrentIndex);
+					
+    				insertAll(toShow);
+    				
+    				setCurrent(intCurrentIndex);
+    				manageButtons(intCurrentIndex);
+    				
+    				event.stopImmediatePropagation();
+    			});
+    		}
+        };
+		
+		/**
+		 * method to insert a parent in the desired show-container
+		 */
+		insert = function(objParent, intIndex) {
+			objParent.show().addClass("clone");
+			objParent.find('.spacerFirst').parent().remove();
+			var intInnerDivs = objParent.children('div').length;
+			var intSpaceWithoutIcons = 15 - (intInnerDivs - 2);
+			removeColInfo(objParent.find('div:eq(0)')); // TODO: :eq selector is deprecated
+			objParent.find('div:eq(0)').addClass("col-xs-1");
+			removeColInfo(objParent.find('div:eq(1)')); // TODO: :eq selector is deprecated
+			objParent.find('div:eq(1)').addClass("col-xs-" + intSpaceWithoutIcons); // TODO: :eq selector is deprecated
+			$('#tree_display_nav_' + intIndex).find(".display-tree-nav").html(objParent);
+		}		
+		
+		/**
+		 * method to return the indices of the next group of parents based on the current index
+		 */
+		getParentIndices = function(intCurrentIndex) {
+			return arrValidIndices.slice(intCurrentIndex,intCurrentIndex + intParentLevel);
+		}
+		
+		/**
+		 * inserts the next group of parents based on their indices
+		 */
+		insertAll = function(arrParentIndices) {
+			var intPosition = 0;
+			
+			arrParentIndices.forEach(function(idx){
+				var objParent = $(strLevelClass + ":not(.clone)").eq(arrValidIndices[idx - 1]).clone();
+				insert(objParent, intPosition);
+				intPosition++;
+			});
+			
+		}
+		
+		// sets the current index (pointer)
+		setCurrent = function(intCurrentIndex) {
+			$("#tree_nav_panel").attr("data-current",intCurrentIndex);
+		}
+		
+		// returns the current index (pointer)
+		getCurrent = function() {
+			var intCurrent = parseInt($("#tree_nav_panel").attr("data-current"));
+			
+			if (isNaN(intCurrent) == true) {
+				$("#tree_nav_panel").attr("data-current", intPointer - intParentLevel);
+				return getCurrent();
+			}
+			
+			return intCurrent;
+		}
+		
+		/**
+		 * method to manage the visibility of the up and down buttons
+		 */
+		manageButtons = function(intCurrentIndex) {
+			$('#tree_move_up').parent().parent().toggle(!(intCurrentIndex <= 0));
+			
+			$('#tree_move_down').parent().parent().toggle((intCurrentIndex + intParentLevel) < arrValidIndices.length);
+		}
+
+        return {
+        	// making register method public 
+            register: register,
+            setBaseValues : setBaseValues
+        };
+    })();
+
+    // calling the register method of the hideLevel singleton
+    hideLevel.register();
+
+    // setting the base values required for the hide level functionality and register the required events 
+    // needed for tree ajax reloads
+    $(window).on("tree_loaded", function(e) {
+    	hideLevel.setBaseValues();
+    	hideLevel.register();
+    });
+    
+});
+
+
+

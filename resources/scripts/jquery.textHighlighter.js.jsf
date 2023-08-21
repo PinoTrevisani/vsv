@@ -1,0 +1,772 @@
+/**
+ * @license jQuery Text Highlighter
+ * Copyright (C) 2011 - 2013 by mirz
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+(function($, window, document, undefined) {
+    var nodeTypes = {
+        ELEMENT_NODE: 1,
+        TEXT_NODE: 3
+    };
+
+    var plugin = {
+        name: 'textHighlighter'
+    };
+
+    function TextHighlighter(element, options) {
+        this.context = element;
+        this.$context = $(element);
+        this.options = $.extend({}, $[plugin.name].defaults, options);
+        this.init();
+    }
+
+    TextHighlighter.prototype = {
+        init: function() {
+            this.$context.addClass(this.options.contextClass);
+            this.bindEvents();
+        },
+
+        destroy: function() {
+            this.unbindEvents();
+            this.$context.removeClass(this.options.contextClass);
+            this.$context.removeData(plugin.name);
+        },
+
+        bindEvents: function() {
+        	this.$context.bind('mouseup', {self: this}, this.highlightHandler);
+        },
+
+        unbindEvents: function() {
+           this.$context.unbind('mouseup', this.highlightHandler);
+        },
+
+        highlightHandler: function(event) {
+            var self = event.data.self;
+            self.doHighlight();
+        },
+
+        /**
+         * Highlights currently selected text.
+         */
+        doHighlight: function() {
+            var range = this.getCurrentRange();
+            if (!range || range.collapsed) {
+            	return;
+            }
+            var rangeText = range.toString();
+            if (this.options.onBeforeHighlight(range) == true) {
+                var $wrapper = $.textHighlighter.createWrapper(this.options);
+                var createdHighlights = this.highlightRange(range, $wrapper);
+                var normalizedHighlights = this.normalizeHighlights(createdHighlights);
+
+                this.options.onAfterHighlight(normalizedHighlights, rangeText);
+            }
+            this.removeAllRanges();
+        },
+
+        /**
+         * Returns first range of current selection object.
+         */
+        getCurrentRange: function() {
+            var selection = this.getCurrentSelection();
+
+            var range;
+            if (selection.rangeCount > 0) {
+                range = selection.getRangeAt(0);
+            }
+            return range;
+        },
+
+        removeAllRanges: function() {
+            if(navigator.userAgent.toLowerCase().indexOf("touch") == -1 && navigator.userAgent.toLowerCase().indexOf("tablet") == -1){
+            	var selection = this.getCurrentSelection();
+            	selection.removeAllRanges();
+            }
+        },
+
+        /**
+         * Returns current selection object.
+         */
+        getCurrentSelection: function() {
+            var currentWindow = this.getCurrentWindow();
+            var selection;
+
+            if (currentWindow.getSelection) {
+                selection = currentWindow.getSelection();
+            } else if ($('iframe').length) {
+                $('iframe', top.document).each(function() {
+                    if (this.contentWindow === currentWindow) {
+                        selection = rangy.getIframeSelection(this);
+                        return false;
+                    }
+                });
+            } else {
+                selection = rangy.getSelection();
+            }
+
+            return selection;
+        },
+
+        /**
+         * Returns owner window of this.context.
+         */
+        getCurrentWindow: function() {
+            var currentDoc = this.getCurrentDocument();
+            if (currentDoc.defaultView) {
+                return currentDoc.defaultView; // Non-IE
+            } else {
+                return currentDoc.parentWindow; // IE
+            }
+        },
+
+        /**
+         * Returns owner document of this.context.
+         */
+        getCurrentDocument: function() {
+            // if ownerDocument is null then context is document
+            return this.context.ownerDocument ? this.context.ownerDocument : this.context;
+        },
+
+        /**
+         * Wraps given range (highlights it) object in the given wrapper.
+         */
+        highlightRange: function(range, $wrapper) {
+            if (range.collapsed) return;
+
+            // Don't highlight content of these tags
+            var ignoreTags = ['SCRIPT', 'STYLE', 'SELECT', 'BUTTON', 'OBJECT', 'APPLET'];
+            var startContainer = range.startContainer;
+            var endContainer = range.endContainer;
+            var ancestor = range.commonAncestorContainer;
+            var goDeeper = true;
+
+            if (range.endOffset == 0) {
+                while (!endContainer.previousSibling && endContainer.parentNode != ancestor) {
+                    endContainer = endContainer.parentNode;
+                }
+                endContainer = endContainer.previousSibling;
+            } else if (endContainer.nodeType == nodeTypes.TEXT_NODE) {
+                if (range.endOffset < endContainer.nodeValue.length) {
+                    endContainer.splitText(range.endOffset);
+                }
+            } else if (range.endOffset > 0) {
+                endContainer = endContainer.childNodes.item(range.endOffset - 1);
+            }
+
+            if (startContainer.nodeType == nodeTypes.TEXT_NODE) {
+                if (range.startOffset == startContainer.nodeValue.length) {
+                    goDeeper = false;
+                } else if (range.startOffset > 0) {
+                    startContainer = startContainer.splitText(range.startOffset);
+                    if (endContainer == startContainer.previousSibling) endContainer = startContainer;
+                }
+            } else if (range.startOffset < startContainer.childNodes.length) {
+                startContainer = startContainer.childNodes.item(range.startOffset);
+            } else {
+                startContainer = startContainer.nextSibling;
+            }
+
+            var done = false;
+            var node = startContainer;
+            var highlights = [];
+
+            do {
+                if (goDeeper && node.nodeType == nodeTypes.TEXT_NODE) {
+                    if (/\S/.test(node.nodeValue)) {
+                        var wrapper = $wrapper.clone(true).get(0);
+                        var nodeParent = node.parentNode;
+
+                        // highlight if node is inside the context
+                        if ($.contains(this.context, nodeParent) || nodeParent === this.context) {
+                            var highlight = $(node).wrap(wrapper).parent().get(0);
+                            highlights.push(highlight);
+                        }
+                    }
+
+                    goDeeper = false;
+                }
+                if (node == endContainer && (!endContainer.hasChildNodes() || !goDeeper)) {
+                    done = true;
+                }
+
+                if ($.inArray(node.tagName, ignoreTags) != -1) {
+                    goDeeper = false;
+                }
+                if (goDeeper && node.hasChildNodes()) {
+                    node = node.firstChild;
+                } else if (node.nextSibling != null) {
+                    node = node.nextSibling;
+                    goDeeper = true;
+                } else {
+                    node = node.parentNode;
+                    goDeeper = false;
+                }
+            } while (!done);
+
+            return highlights;
+        },
+
+        /**
+         * Normalizes highlights - nested highlights are flattened and sibling higlights are merged.
+         */
+        normalizeHighlights: function(highlights) {
+            this.flattenNestedHighlights(highlights);
+            this.mergeSiblingHighlights(highlights);
+
+            // omit removed nodes
+            var normalizedHighlights = $.map(highlights, function(hl) {
+                if (typeof hl.parentElement != 'undefined') { // IE
+                    return hl.parentElement != null ? hl : null;
+                } else {
+                    return hl.parentNode != null ? hl : null;
+                }
+            });
+
+            return normalizedHighlights;
+        },
+
+        flattenNestedHighlights: function(highlights) {
+            var self = this;
+
+            $.each(highlights, function(i) {
+                var $highlight = $(this);
+                var $parent = $highlight.parent();
+                var $parentPrev = $parent.prev();
+                var $parentNext = $parent.next();
+
+                if (self.isHighlight($parent)) {
+                    if ($parent.css('background-color') != $highlight.css('background-color')) {
+                        if (self.isHighlight($parentPrev) && !$highlight.get(0).previousSibling
+                            && $parentPrev.css('background-color') != $parent.css('background-color')
+                            && $parentPrev.css('background-color') == $highlight.css('background-color')) {
+
+                            $highlight.insertAfter($parentPrev);
+                        }
+
+                        if (self.isHighlight($parentNext) && !$highlight.get(0).nextSibling
+                            && $parentNext.css('background-color') != $parent.css('background-color')
+                            && $parentNext.css('background-color') == $highlight.css('background-color')) {
+
+                            $highlight.insertBefore($parentNext);
+                        }
+
+                        if ($parent.is(':empty')) {
+                            $parent.remove();
+                        }
+                    } else {
+                        var newNode = document.createTextNode($parent.text());
+
+                        $parent.empty();
+                        $parent.append(newNode);
+                        $(highlights[i]).remove();
+                    }
+                }
+            });
+        },
+
+        mergeSiblingHighlights: function(highlights) {
+            var self = this;
+
+            function shouldMerge(current, node) {
+                return node && node.nodeType == nodeTypes.ELEMENT_NODE
+                	// TODO: check merging of non-background-color-based markings
+                    && $(current).css('background-color') == $(node).css('background-color')
+                    && $(node).hasClass(self.options.highlightedClass)
+                    ? true : false;
+            }
+
+            $.each(highlights, function() {
+                var highlight = this;
+
+                var prev = highlight.previousSibling;
+                var next = highlight.nextSibling;
+
+                if (shouldMerge(highlight, prev)) {
+                    var mergedTxt = $(prev).text() + $(highlight).text();
+                    $(highlight).text(mergedTxt);
+                    $(prev).remove();
+                }
+                if (shouldMerge(highlight, next)) {
+                    var mergedTxt = $(highlight).text() + $(next).text();
+                    $(highlight).text(mergedTxt);
+                    $(next).remove();
+                }
+            });
+        },
+
+        /**
+         * Sets style of future highlights.
+         */
+        setStyle: function(style) {
+            this.options.style = style;
+        },
+
+        /**
+         * Returns current highlights style.
+         */
+        getStyle: function() {
+            return this.options.style;
+        },
+
+        /**
+         * Removes all given highlights
+         */
+        removeHighlights: function(highlights) {
+            var unwrapHighlight = function(highlight) {
+                return $(highlight).contents().unwrap().get(0);
+            };
+
+            var mergeSiblingTextNodes = function(textNode) {
+                var prev = textNode.previousSibling;
+                var next = textNode.nextSibling;
+
+                if (prev && prev.nodeType == nodeTypes.TEXT_NODE) {
+                    textNode.nodeValue = prev.nodeValue + textNode.nodeValue;
+                    prev.parentNode.removeChild(prev);
+                }
+                if (next && next.nodeType == nodeTypes.TEXT_NODE) {
+                    textNode.nodeValue = textNode.nodeValue + next.nodeValue;
+                    next.parentNode.removeChild(next);
+                }
+            };
+
+            var self = this;
+            $(highlights).each(function() {
+                if (self.options.onRemoveHighlight(this) == true) {
+                    var textNode = unwrapHighlight(this);
+                    mergeSiblingTextNodes(textNode);
+                }
+            });
+        },
+
+        /**
+         * Returns all highlights in given container. If container is a highlight itself and
+         * andSelf is true, container will be also returned
+         */
+        getAllHighlights: function(container, andSelf) {
+            var classSelectorStr = '.' + this.options.highlightedClass;
+            var $highlights = $(container).find(classSelectorStr);
+            if (andSelf == true && $(container).hasClass(this.options.highlightedClass)) {
+                $highlights = $highlights.add(container);
+            }
+            return $highlights;
+        },
+
+        /**
+         * Returns true if element is highlight, ie. has proper class.
+         */
+        isHighlight: function($el) {
+            return $el.hasClass(this.options.highlightedClass);
+        },
+
+        /**
+         * Serializes all highlights to stringified JSON object.
+         */
+        serializeHighlights: function() {
+            var $highlights = this.getAllHighlights(this.context);
+            var refEl = this.context;
+            var hlDescriptors = [];
+
+            $highlights.each(function(i, highlight) {
+            	
+            	// Highlight offset from previous sibling within parent node.                
+            	var offset = 0; 
+                if (highlight.previousSibling && highlight.previousSibling.nodeType === nodeTypes.TEXT_NODE) {
+                    offset = highlight.previousSibling.length;
+                }
+                
+                var length = $(highlight).text().length;
+                var wrapper = $(highlight).clone().empty().get(0).outerHTML;
+                var description = $(highlight).attr('title');
+                var style = $(highlight).attr('style');
+                var dataHighlightsId = $(highlight).attr('data-highlights-id');
+                
+            	// Gather all required position info for highlight                
+                var hlPath = [];
+                var el = highlight;
+                // before creating hlPath temporarily remove unassignedHighlights
+            	var unassignedHighlightsParent = $("#unassignedHighlights").parent();
+            	var unassignedHighlights = $("#unassignedHighlights").remove();
+                do {
+                	var childNodesArray = getNodesArrayWithoutEmptyTextNodes(el.parentNode.childNodes);
+                    var elIndex = $.inArray(el, childNodesArray);
+                    hlPath.unshift(elIndex);
+                    el = el.parentNode;
+                } while (el !== refEl);
+                unassignedHighlightsParent.append(unassignedHighlights);
+                
+                var prevChars = getPrevChars(highlight);
+                var nextChars = getNextChars(highlight);
+                var prevCharsExtended = getPrevCharsExtended(highlight);
+                var nextCharsExtended = getNextCharsExtended(highlight);
+                
+                var restoreState = $(highlight).attr('data-restore-state');
+                if(restoreState != "4") {
+                	restoreState = "1";
+                }
+
+                hlDescriptors.push([
+                    wrapper,
+                    $(highlight).text(),
+                    hlPath.join(':'),
+                    offset,
+                    length,
+                    undefined,
+                    prevChars,
+                    nextChars,
+                    description,
+                    style,
+                    dataHighlightsId,
+                    restoreState,
+                    prevCharsExtended,
+                    nextCharsExtended
+                ]);
+            });
+
+            return JSON.stringify(hlDescriptors);
+        },
+
+        /**
+         * Deserializes highlights from stringified JSON given as parameter.
+         */
+        deserializeHighlights: function(json, target, isInSyncPanel) {
+            try {
+                var hlDescriptors = JSON.parse(json);
+            } catch (e) {
+                throw "Can't parse serialized highlights: " + e;
+            }
+
+            var self = this;
+            var highlights = [];
+            var bSkipBody = !target.is('div');
+
+            var unassignedHighlightsTableContents = [];
+
+            var deserializationFn = function (hlDescriptor, target) {
+                var wrapper = hlDescriptor[0];
+                var hlText = hlDescriptor[1];
+                var hlPath = hlDescriptor[2].split(':');
+                var elOffset = hlDescriptor[3];
+                var hlLength = hlDescriptor[4];
+            	var prevChars = hlDescriptor[6];
+            	var nextChars = hlDescriptor[7];
+            	var description = hlDescriptor[8];
+            	var style = hlDescriptor[9];
+            	var dataHighlightsId = hlDescriptor[10];
+            	var restoreState = hlDescriptor[11];
+            	
+                var elIndex = hlPath.pop();
+                var idx = null;
+                var node = self.context;
+
+                
+                
+                if(bSkipBody) {
+                	node = target[0];
+                	hlPath.shift();
+                	hlPath.shift();
+
+                	if($(node).attr('id').indexOf('printbody_') == 0) {
+                        // Coming from Outpumanager 
+                		// TODO: how to do it now?
+                		node = getNodesArrayWithoutEmptyTextNodes(node.childNodes)[hlPath.shift()];
+                	} else {
+                        // Coming from Scaffold 
+                		// TODO: probably not needed anymore?
+	                	idx = hlPath.shift();
+
+	                	if(idx == -2) {
+	                		// Highlight within para title
+	                		node = node.previousSibling;
+	                		if(isEmptyTextNode(node))
+		                		node = node.previousSibling;
+	                	} else if(idx < 0) {
+	                		// Skip highlighting of other titles
+	                		return;
+	                	} else {
+	                		// Highlight in main text body
+	                		node = getNodesArrayWithoutEmptyTextNodes(node.childNodes)[idx];
+	                	}
+                	}
+                }
+                
+                if(restoreState != 4) {
+	                while ((idx = hlPath.shift()) !== undefined) {
+	                	node = getNodesArrayWithoutEmptyTextNodes(node.childNodes)[idx];
+	                }
+	
+	                var childNodes = getNodesArrayWithoutEmptyTextNodes(node.childNodes);
+					
+	                if (childNodes[elIndex-1] && childNodes[elIndex-1].nodeType === nodeTypes.TEXT_NODE) {
+	                    elIndex -= 1;
+	                }
+	                
+	                var textNode = childNodes[elIndex];
+	                var hlNode = textNode.splitText(elOffset);
+	                
+	                if(hlNode.nodeValue.length > hlLength) {
+	                	hlNode.splitText(hlLength);
+	                }
+	                
+	                if (hlNode.nextSibling && hlNode.nextSibling.nodeValue == '') {
+	                    hlNode.parentNode.removeChild(hlNode.nextSibling);
+	                }
+	
+	                if (hlNode.previousSibling && hlNode.previousSibling.nodeValue == '') {
+	                    hlNode.parentNode.removeChild(hlNode.previousSibling);
+	                }
+	                
+	                var highlight = $(hlNode).wrap(wrapper).parent().get(0);
+
+	                if(restoreState == 3) {
+	                	var id = $(highlight).attr('data-highlights-id');
+	                	// TODO: add configurability
+	                	var warning = unescape('<img src="' + contextPath + '/resources/images/warning.gif" ' 
+	                			+ 'data-warning-id="' + id + '" '
+	                			+ 'class="warningimg" '
+	                			+ 'style="margin-left:3px;" '
+	                			+ 'title="Diese Markierung stimmt m%F6glicherweise nicht mehr mit der von Ihnen gesetzten %FCberein. Bitte pr%FCfen Sie die Markierung und speichern Sie dann die Markierungen."></img>');
+	                	$(highlight).append(warning);
+	                }
+	                
+	                highlights.push(highlight);
+                } else { 
+                	unassignedHighlightsTableContents.push(hlDescriptor);
+                }
+            };
+
+            $.each(hlDescriptors, function(i, hlDescriptor) {
+                try {
+                    deserializationFn(hlDescriptor, target);
+                } catch (e) {
+                	unassignedHighlightsTableContents.push(hlDescriptor);
+                    return true;
+                }
+            });
+            
+            // TODO: add configurability
+            var isParallelView = currentMarker != null ? currentMarker.doSync : false;
+            if(unassignedHighlightsTableContents.length > 0 && !bSkipBody && (!isParallelView || $(target).attr('id') == $(currentMarker.getSyncPanel()).attr('id'))) {
+            	var table = unescape('<div id="unassignedHighlights" style="-webkit-touch-callout: none;-webkit-user-select: none;-khtml-user-select: none;-moz-user-select: none;-ms-user-select: none;user-select: none;"><div style="margin-top:50px;">Markierungen ohne Ankn%FCpfungspunkt:</div><table style="border:1px solid #000000;">');
+            	var dataHighlightsIds = [];
+
+				for(var i = 0; i < unassignedHighlightsTableContents.length; i++) {
+					unassignedEntry = unassignedHighlightsTableContents[i];
+					var dataHighlightsId = unassignedEntry[10];
+					if(dataHighlightsIds.indexOf(dataHighlightsId) < 0) {
+						dataHighlightsIds.push(dataHighlightsId);
+					}
+				}
+				
+				for(var i = 0; i < dataHighlightsIds.length; i++) {
+					var currentDataHighlightsId = dataHighlightsIds[i];
+					var rowStart = '';
+					var rowText = '';
+					var rowEnd = '';
+					
+					for(var j = 0; j < unassignedHighlightsTableContents.length; j++) {
+						unassignedEntry = unassignedHighlightsTableContents[j];
+						var dataHighlightsId = unassignedEntry[10];
+						
+						if(dataHighlightsId == currentDataHighlightsId) {
+							var hlText = unassignedEntry[1];
+							if(rowText == '') {
+				            	var prevChars = unassignedEntry[6];
+				            	var nextChars = unassignedEntry[7];
+				            	var description = unassignedEntry[8];
+				            	var style = unassignedEntry[9];
+								rowStart = '<tr><td>... ' + prevChars + '<span class="highlighted" data-restore-state="4" data-highlights-id="'
+									+ dataHighlightsId + '" title="' + description + '" style="' + style + '">';
+								rowEnd = '</span>' + nextChars + '...</td><td>' + description + '</td></tr>'
+							}
+							
+							rowText += hlText;
+						}
+					}
+					table += rowStart + rowText + rowEnd;
+				}
+
+            	table += '</table></div>';
+            	$(target).append(table);
+            }
+            
+            return highlights;
+        }
+    };
+   
+    
+    function getNodesArrayWithoutEmptyTextNodes(oldArray) {
+    	var newArray = new Array();
+    	var counter = 0;
+    	for(var i = 0; i < oldArray.length; i++) {
+    		if(isEmptyTextNode(oldArray[i]))
+    			continue;
+
+    		newArray[counter] = oldArray[i];
+    		counter++;
+    	}
+    	
+    	return newArray;
+    }
+
+    function isEmptyTextNode(node) {
+		var text = $(node).text().trim();
+		return node.nodeType === nodeTypes.TEXT_NODE && (text == undefined || text == null || text.length == 0);
+    }
+    
+    function getPrevChars(highlight) {
+    	var currentPrevElement = highlight.previousSibling;
+        var prevChars = '';
+        
+        if(currentPrevElement != null && currentPrevElement != undefined && currentPrevElement.nodeType == 3) {
+        	var charsForPrev = currentPrevElement.nodeValue;
+	    	 
+        	if(charsForPrev.length >= 20) {
+        		prevChars = charsForPrev.substr(charsForPrev.length - 20, charsForPrev.length);
+        	} else {
+        		prevChars = charsForPrev;
+        	}
+        }
+        
+        return prevChars;
+    }
+    
+    function getNextChars(highlight) {
+    	var currentNextElement = highlight.nextSibling;
+        var nextChars = '';
+        
+        if(currentNextElement != null && currentNextElement != undefined && currentNextElement.nodeType == 3) {
+        	var charsForNext = currentNextElement.nodeValue;
+    		
+        	if(charsForNext.length >= 20) {
+        		nextChars = charsForNext.substr(0, 20);
+        	} else {
+        		nextChars = charsForNext;
+        	}
+        }
+        
+        return nextChars;
+    }
+    
+    function getPrevCharsExtended(highlight) {
+    	var currentPrevElement = highlight.previousSibling;
+    	var prevChars = '';
+    	
+    	while(prevChars.length <= 20 && (currentPrevElement != null && currentPrevElement != undefined)) {
+			prevChars = $(currentPrevElement).text() + prevChars;
+			prevChars = prevChars.replace('\n', '');
+			currentPrevElement = currentPrevElement.previousSibling;
+		}
+    	
+    	currentPrevElement = highlight.parentNode;
+    	var breakLoop = false;
+    	while(prevChars.length <= 20 && (currentPrevElement != null && currentPrevElement != undefined)) {
+    		if(breakLoop) {
+    			break;
+    		}
+    		
+    		var currentPrevSibling = currentPrevElement.previousSibling;
+    		
+	    	while(prevChars.length <= 20 && (currentPrevSibling != null && currentPrevSibling != undefined)) {
+	    		if(currentPrevSibling.nodeType == 1 && (currentPrevSibling.tagName == 'head' || currentPrevSibling.tagName == 'HEAD')) {
+	    			breakLoop = true;
+	    			break;
+	    		}
+	    		
+				prevChars = $(currentPrevSibling).text() + prevChars;
+				prevChars = prevChars.replace('\n', '');
+				currentPrevSibling = currentPrevSibling.previousSibling;
+	    	}
+	    	
+	    	currentPrevElement = currentPrevElement.parentNode;
+    	}
+    	
+    	if(prevChars.length > 20) {
+    		prevChars = prevChars.substr(prevChars.length - 20, prevChars.length);
+    	}
+    	
+    	return prevChars;
+    }
+    
+    function getNextCharsExtended(highlight) {
+    	var currentNextElement = highlight.nextSibling;
+    	var nextChars = '';
+    	
+    	while(nextChars.length <= 20 && (currentNextElement != null && currentNextElement != undefined)) {
+    		nextChars += $(currentNextElement).text();
+    		nextChars = nextChars.replace('\n', '');
+			currentNextElement = currentNextElement.nextSibling;
+		}
+    	
+    	currentNextElement = highlight.parentNode;
+    	while(nextChars.length <= 20 && (currentNextElement != null && currentNextElement != undefined)) {
+    		var currentNextSibling = currentNextElement.nextSibling;
+	    	while(nextChars.length <= 20 && (currentNextSibling != null && currentNextSibling != undefined)) {
+	    		nextChars += $(currentNextSibling).text();
+	    		nextChars = nextChars.replace('\n', '');
+	    		currentNextSibling = currentNextSibling.nextSibling;
+	    	}
+	    	
+	    	currentNextElement = currentNextElement.parentNode;
+    	}
+    	
+    	if(nextChars.length > 20) {
+    		nextChars = nextChars.substr(0, 20);
+    	}
+    	
+    	return nextChars;
+    }
+    
+    /**
+     * Returns TextHighlighter instance.
+     */
+    $.fn.getHighlighter = function() {
+        return this.data(plugin.name);
+    };
+
+    $.fn[plugin.name] = function(options) {
+        return this.each(function() {
+            if (!$.data(this, plugin.name)) {
+                $.data(this, plugin.name, new TextHighlighter(this, options));
+            }
+        });
+    };
+
+    $.textHighlighter = {
+        /**
+         * Returns HTML element to wrap selected text in.
+         */
+        createWrapper: function(options) {
+            return $('<span></span>')
+                .attr('style', options.style)
+                .addClass(options.highlightedClass);
+        },
+        defaults: {
+            style: 'background-color:#FF60FF',
+            highlightedClass: 'highlighted',
+            contextClass: 'highlighter-context',
+            onRemoveHighlight: function() { return true; },
+            onBeforeHighlight: function() { return true; },
+            onAfterHighlight: function(highlights) { updateMouseUps(); highlightsChanged(highlights);}
+        }
+    };
+
+})(jQuery, window, document);

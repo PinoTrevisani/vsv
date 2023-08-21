@@ -1,0 +1,13 @@
+/**
+ * JavaScript code for screanReader
+ */
+
+function alertSortBox() {
+	let alertP = document.getElementById('alertTextSortBox');
+	if (alertP == null) {
+		$("<p id='alertTextSortBox' role='alert'>Sortierung der Hitlist geändert</p>").appendTo(document.body);
+	} else {
+		alertP.remove();
+		$("<p id='alertTextSortBox' role='alert'>Sortierung der Hitlist geändert</p>").appendTo(document.body);
+	}
+}

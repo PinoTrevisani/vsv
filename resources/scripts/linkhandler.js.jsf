@@ -1,0 +1,402 @@
+/**
+ * 
+ * Class LinkHandler
+ * 
+ * provide a central method {@link LinkHandler#doLink(string,string,string)} to
+ * handle the following types of links:
+ *  - alias (TODO) - filename (TODO) - anchor
+ * 
+ * @author NS
+ */
+function LinkHandler() {
+	this.linkHandlerHooks = [];
+	
+	this.doLink2Doc = function(docId) {
+		this.doLink(null, docId, null, null);
+	}
+	
+	this.doLink2Doc = function(docId, anchor) {
+		this.doLink(null, docId, anchor, null);
+	}
+	
+	this.doLink2Id = function(alias, id) {
+		this.doLink(alias, null, null, id);
+	}
+	
+	/**
+	 * 
+	 * handle the arguments will validate the given arguments and call the
+	 * corrent sub method i.e.:
+	 * LinkHandler.doLink(undefined,undefined,"01e_fm_003_i1072185") =>
+	 * LinkHandler.subLinkAnchor
+	 * 
+	 * @param alias
+	 * @param filename
+	 * @param anchor
+	 * @param id
+	 * @author nhe,ns TODO: add example for alias and filename
+	 */
+	this.doLink = function(alias, docId, anchor, id) {
+		
+		if(isEmpty(alias) && isEmpty(docId) && isEmpty(id) && !isEmpty(anchor)) {
+			subLinkAnchor(anchor);
+			return;
+		}
+		
+		var target = stdLink(alias, docId, anchor);
+		
+		if(typeof(target)=='undefined' || target=='undefined'){
+			return;
+		}
+		
+		if(this.linkHandlerHooks!=undefined){
+			for(var i = 0; i<this.linkHandlerHooks.length;i++){
+				target = this.linkHandlerHooks[i].handleTarget(target);
+			}
+		}
+		
+		parent.window.location = target;
+	};
+		
+	this.doMultiLink = function(elem, metaKeyValue1, metaKeyValue2) {
+		if (elem == null || elem.length < 1) {
+			// console.warn('No src elem found');
+			
+			return;
+		}
+		if (isNullOrEmpty(metaKeyValue1) || metaKeyValue1.indexOf(':') < 0) {
+			// console.warn('Meta syntax error');
+			return;
+		}
+		
+		var clickedTag = $(elem);
+		// if the tag is in a popover, we want to display the linklist relative to the source instead of relative to the popover
+		if(clickedTag.closest('.popover').length>0){
+			clickedTag = $("[aria-describedby='" + clickedTag.closest('.popover').attr('id') + "']");
+			if(clickedTag.next(".popoverHelper").length==0){
+				clickedTag.after("<a class=\"popoverHelper\" href=\"#\"></a>");
+			}
+			clickedTag = clickedTag.next(".popoverHelper");
+		}
+		var requestUrl = contextPath + "/link?linkMetaValues=" + encodeURI(metaKeyValue1);
+		if(metaKeyValue2) {
+			requestUrl += "@@@" + encodeURI(metaKeyValue2);
+		}
+		$.ajax({
+			url : requestUrl,
+			dataType : "json",
+			contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+			method: 'POST',
+			async:true,
+			success : function(data, textStatus, jqXHR) {
+				// data ist das json
+				// open popover.
+				// console.log(data, clickedTag);
+				
+				var links = data.links;
+				var closeButton = 
+					'<button type="button" class="close" aria-label="Schliessen" onmouseup="var that = this; checkAndExecuteUserInputEventHandling(event, function(event){$(this).closest(\'.popover\').popover(\'dispose\');});" onkeyup="var that = this; checkAndExecuteUserInputEventHandling(event, function(event){$(this).closest(\'.popover\').popover(\'dispose\');});"><span aria-hidden="true">&times;</span></button>';
+				if (links.length == 1) {
+					if(links[0].src){
+					// Link direkt aufrufen
+						L.doLink(undefined, links[0].src, links[0].anchor);
+						return;
+					}else {
+						var errorText = '<div class="row no-gutters"><div class="col"><p>' + links[0].title + '</p></div><div class="col-auto">' + closeButton+'</div></div>';
+						$(clickedTag).popover({
+							container:$(clickedTag).offsetParent(),
+							html:true,
+							content:errorText,
+							placement:'bottom',
+							trigger: 'focus'
+						});
+						$(clickedTag).popover('show');
+					}
+					return;
+				}
+				// console.log(links);
+				
+				var linksText = '<div class="row no-gutters"><div class="col"><p>Hinterlegte Links</p></div><div class="col-auto">' + closeButton+'</div></div>';
+				
+				for (var i = 0; i< links.length; i++) {
+					var keys = Object.keys(links[i]);
+					for(var j = 0 ; j < keys.length; j++){
+						var k = keys[j];
+						// console.log(k+":"+links[i][k]);
+					}
+					var text = '<p><a href="' + stdLink(undefined,links[i].src) + '">' + links[i].title + '</a></p>';
+					linksText += text;
+				}
+				$(clickedTag).popover({
+					container:$(clickedTag).offsetParent(),
+					html:true,
+					content:linksText,
+					placement:'right',
+					trigger: 'focus'
+				});
+				$(clickedTag).popover('show');
+				
+				
+			},			
+			error : function(jqXHR, textStatus, errorThrown) {
+				// console.log(jqXHR,textStatus,errorThrown);
+				var text = "<p>Links konnten nicht geladen werden</p>";
+				
+				$(clickedTag).popover({
+					container:$(clickedTag).offsetParent(),
+					html:true,
+					content:text,
+					placement:'bottom',
+					trigger: 'focus'
+				})
+			}
+		});
+		return false;
+	};
+	
+	
+	/**
+	 * Adds a hook to this linkHandler. Hooks are meant to provide special ways of manipulating the target url.
+	 * E.g. we don't want to link to document.jsf if the docId ends with "fm". The hook changes to target in order 
+	 * to use formular.jsf instead of document.jsf.
+	 */
+	this.registerHook = function(linkHandlerHook){
+		if(linkHandlerHook instanceof LinkHandlerHook){
+			this.linkHandlerHooks.push(linkHandlerHook);
+		}
+	};
+	
+	function getBaseUrl(){
+		var baseHref = null;
+		if(parent==null){
+			parent=window;
+		}
+
+//		if(parent!=null && typeof(getBaseHref)==="function"){
+//			baseHref = parent.getBaseHref();
+//			if(baseHref != null ) {
+//				baseHref = baseHref.replace(/(.*)#.*/, "$1").replace(/(.*)\?.*/, "$1").replace(/(.*)\/.*/, "$1");
+//			}
+//		}
+//		if(baseHref == null ) {
+//			baseHref = parent.location.href;
+//		}
+		
+		if(parent!=null && typeof(parent.getBaseHref)==="function"){
+			baseHref = parent.getBaseHref();
+		}
+		if(parent!=null && baseHref == null ) {
+			baseHref = window.location.origin + window.location.pathname;
+		}
+		if(baseHref != null ) {
+			baseHref = baseHref.replace(/(.*)#.*/, "$1").replace(/(.*)\?.*/, "$1").replace(/(.*)\/.*/, "$1");
+		}
+		
+		return baseHref + shiR4config.documentTargetPage;
+	}
+	
+	
+	function stdLink(alias, docId, anchor, id) {
+
+		var params = "?";
+		if (alias == undefined) {
+			alias = "";
+		}
+		params += "alias=" + alias + "&";
+
+		if(docId == undefined){
+			docId = "";
+		}
+		params += "docId=" + docId + "&";
+		
+		if(!isEmpty(id)){
+			params += "srcId=" + id + "&";
+		}
+		
+		if(!isEmpty(anchor)){
+			var urlDocId = decodeURIComponent(parent.getUrlParam("docId"));
+			if($("a[name='" + anchor + "']").length>0){
+				scrollToAnchor(anchor);
+				return;
+			}
+		}
+		
+		if(anchor == undefined){
+			anchor = "";
+		}
+		params += "anchor=" + anchor + "&";
+		
+		if(isEmpty(alias) && isEmpty(docId) && isEmpty(anchor)) {
+			return;
+		}
+		
+		var newUrl = getBaseUrl() + params + "event=navigation";
+		if(!isEmpty(anchor)){
+			newUrl += "#" + anchor;
+		}
+		
+		return newUrl;
+	}
+	
+	function isEmpty(param) {
+		return param == undefined || param == null || param == ""; 
+	}
+	
+	function isLoadOnScroll() {
+		return (typeof(parent.g_isScaffold) != "undefined" && parent.g_isScaffold);
+	}
+	
+	/**
+	 * 
+	 * handle the given anchor
+	 * 
+	 * @param anchor
+	 * @author nhe
+	 */
+	function subLinkAnchor(anchor) {
+		
+		var urlDocId = decodeURIComponent(parent.getUrlParam("docId"));
+
+		// anchor is current document
+		if (urlDocId == anchor) {
+			return;
+		}
+
+		// internal anchor in static document
+		if (urlDocId.indexOf("absolutestatic") > -1 && anchor.indexOf("#") == 0) {
+			parent.LOS.scrollToIframeAnchor(anchor.substring(1));
+			return;
+		}
+		
+		var scrollEle;
+		if(isLoadOnScroll()){
+			scrollEle = $("[scrollele='true']");
+		} else {
+			scrollEle = $(document);
+		}
+		
+		if(scrollEle.find('#' + anchor).length > 0 || scrollEle.find("[name='" + anchor + "']").length > 0) {
+			// anchor exists in current document
+			if(parent != undefined && parent.LOS != undefined){
+				parent.LOS.scrollToIframeAnchor(anchor);
+				return;
+			}
+		}
+		
+		if(!isLoadOnScroll()) {
+			stdLink(null, null, anchor, null);
+			return;
+		}
+
+		$.ajax({
+			url : parent.contextPath + "/link",
+			type : "POST",
+			dataType : "json",
+			contentType : "application/x-www-form-urlencoded;charset=UTF-8",
+			data : {
+				anchor : anchor,
+				docId : urlDocId
+			},
+			success : function(data, textStatus, jqXHR) {
+				// same document (document already loaded, only scroll
+				// to anchor)
+				if (urlDocId == data.docId) {
+//					parent.LOS.scrollToIframeAnchor(anchor);
+					var evt = new $.Event("document_load");
+					evt.docId = data.docId;
+					evt.alias = data.alias;
+					evt.anchor = data.anchor;
+					evt.scrollBottom =false;
+					evt.scroll=true;
+					$(window).trigger(evt);
+				}
+				// other document, same scaffold (load document content
+				// into scaffold, scroll to anchor)
+				else if (data.sameScaffold) {
+					var losElem = $("#iframeBody").children('div.loadonscroll.' + data.docId.replace('/', '\\/').replace('.', '\\.'));
+					parent.LOS.getLoadOnScrollContent(losElem, function(){parent.LOS.scrollToIframeAnchor(anchor);});
+				} else {
+					// other document, other scaffold
+					parent.window.location = stdLink(data.alias, data.docId, anchor);
+				}
+			},
+			error : function(jqXHR, textStatus, errorThrown) {
+				stdLink(null, null, anchor, null);
+			}
+		});
+	}
+}
+
+/**
+ * Hooks are meant to provide special ways of manipulating the target url.
+ * E.g. we don't want to link to document.jsf if the docId ends with "fm". The hook changes to target in order 
+ * to use formular.jsf instead of document.jsf.
+ * 
+ * Due to their nature, hooks are project-exclusive and should be implemented in the projects resources.
+ * They can then be added by using "L.registerHook".
+ * 
+ * @author fme
+ */
+function LinkHandlerHook() {
+	this.handleTarget = function(target){
+		throw new Error("Abstract method, please implement in an extending object!");
+	};
+}
+
+// instantiate LinkHandler to L
+var L = new LinkHandler();
+
+function DoLink(anchor) {
+	L.doLink(undefined, undefined, anchor);
+}
+
+/**
+ * send parent frame a new location
+ * 
+ * is a base href given is the current uri a seo uri
+ * 
+ * @param docIdVariable
+ */
+function DoLinkAndNavigateToDocument(docIdVariable) {
+	if(docIdVariable.indexOf(shiR4config.documentPrefix)!=0){
+		docIdVariable = shiR4config.documentPrefix + docIdVariable;
+	}
+	if(docIdVariable.indexOf(shiR4config.documentSuffix)==-1){
+		docIdVariable = docIdVariable + shiR4config.documentSuffix;
+	}
+	L.doLink(undefined,docIdVariable);
+}
+
+function DoLinkAlias(alias) {
+	L.doLink(alias);
+}
+
+function doSHIFileLink(docIdVariable){
+	var aIdx=docIdVariable.indexOf("#");
+	if(aIdx>-1){
+		var anchor = docIdVariable.substring(aIdx+1);
+		var docId = docIdVariable.substring(0, aIdx);
+		if(docIdVariable.indexOf("/")>-1){
+			L.doLink(undefined, docId, anchor);
+		} else {
+			L.doLink(undefined, "docs/"+docId, anchor);
+		}
+	}else{
+		if(docIdVariable.indexOf("/")>-1){
+			DoLinkAndNavigateToDocument(docIdVariable);
+		} else {
+			DoLinkAndNavigateToDocument("docs/"+docIdVariable);
+		}
+	}
+}
+
+function doSHIAliasLink(alias){
+	DoLinkAlias(alias);
+}
+
+function scrollToAnchor(anchor){
+	var target = $("a[name='" + anchor + "']");
+	if(target.length>0){
+		target[0].scrollIntoView();
+	}
+}
